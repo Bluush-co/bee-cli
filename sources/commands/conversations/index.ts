@@ -1,7 +1,10 @@
 import type { Command, CommandContext } from "@/commands/types";
 import { printJson, requestDeveloperJson } from "@/commands/developerApi";
 
-const USAGE = "bee [--staging] conversations list [--limit N] [--cursor <cursor>]";
+const USAGE = [
+  "bee [--staging] conversations list [--limit N] [--cursor <cursor>]",
+  "bee [--staging] conversations get <id>",
+].join("\n");
 
 export const conversationsCommand: Command = {
   name: "conversations",
@@ -16,6 +19,9 @@ export const conversationsCommand: Command = {
     switch (subcommand) {
       case "list":
         await handleList(rest, context);
+        return;
+      case "get":
+        await handleGet(rest, context);
         return;
       default:
         throw new Error(`Unknown conversations subcommand: ${subcommand}`);
@@ -94,4 +100,30 @@ function parseListArgs(args: readonly string[]): ListOptions {
   }
 
   return options;
+}
+
+async function handleGet(
+  args: readonly string[],
+  context: CommandContext
+): Promise<void> {
+  const id = parseId(args);
+  const data = await requestDeveloperJson(context, `/v1/conversations/${id}`, {
+    method: "GET",
+  });
+  printJson(data);
+}
+
+function parseId(args: readonly string[]): number {
+  if (args.length === 0) {
+    throw new Error("Missing conversation id.");
+  }
+  if (args.length > 1) {
+    throw new Error(`Unexpected arguments: ${args.join(" ")}`);
+  }
+
+  const parsed = Number.parseInt(args[0] ?? "", 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error("Conversation id must be a positive integer.");
+  }
+  return parsed;
 }
