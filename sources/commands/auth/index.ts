@@ -1,6 +1,9 @@
+import { select } from "@inquirer/prompts";
 import type { Command, CommandContext } from "@/commands/types";
 import { getEnvironmentConfig } from "@/environment";
 import { clearToken, loadToken, saveToken } from "@/secureStore";
+import { openBrowser } from "@/utils/browser";
+import { renderQrCode } from "@/utils/qrCode";
 
 type LoginOptions = {
   token?: string;
@@ -18,7 +21,23 @@ type DevUser = {
   last_name: string | null;
 };
 
+type DeviceAuthStart = {
+  device_code: string;
+  user_code: string;
+  verification_url: string;
+  verification_uri_complete: string | null;
+  expires_in: number;
+  interval: number;
+};
+
+type DeviceAuthPollOutcome =
+  | { status: "success"; token: string }
+  | { status: "pending"; retryInMs?: number };
+
+type DeviceAuthMethod = "browser" | "qr";
+
 const USAGE = [
+  "bee [--staging] auth login [--skip-verify]",
   "bee [--staging] auth login --token <token> [--skip-verify]",
   "bee [--staging] auth login --token-stdin [--skip-verify]",
   "bee [--staging] auth status [--no-verify]",
@@ -74,8 +93,14 @@ async function handleLogin(
   }
 
   if (!token) {
-    throw new Error("Missing token. Provide --token or --token-stdin.");
+    token = await loginWithDeviceFlow(context);
   }
+
+  if (!token) {
+    throw new Error("Missing token.");
+  }
+
+  token = token.trim();
 
   let user: DevUser | null = null;
   if (!options.skipVerify) {
@@ -235,6 +260,212 @@ function maskToken(token: string): string {
     return "********";
   }
   return `${trimmed.slice(0, 4)}...${trimmed.slice(-4)}`;
+}
+
+async function loginWithDeviceFlow(context: CommandContext): Promise<string> {
+  if (!process.stdin.isTTY) {
+    throw new Error(
+      "Interactive login requires a TTY. Use --token or --token-stdin."
+    );
+  }
+
+  const deviceAuth = await startDeviceAuth(context);
+  const verificationUrl = resolveVerificationUrl(deviceAuth);
+  const method = await selectAuthMethod();
+
+  await presentDeviceAuth(method, verificationUrl, deviceAuth.user_code);
+  console.log("Waiting for authorization...");
+
+  return await pollForDeviceToken(context, deviceAuth);
+}
+
+function resolveVerificationUrl(deviceAuth: DeviceAuthStart): string {
+  if (deviceAuth.verification_uri_complete) {
+    return deviceAuth.verification_uri_complete;
+  }
+
+  try {
+    const url = new URL(deviceAuth.verification_url);
+    if (!url.searchParams.has("code")) {
+      url.searchParams.set("code", deviceAuth.user_code);
+    }
+    return url.toString();
+  } catch {
+    return deviceAuth.verification_url;
+  }
+}
+
+async function selectAuthMethod(): Promise<DeviceAuthMethod> {
+  return await select({
+    message: "How would you like to authenticate?",
+    choices: [
+      { name: "Open a browser window", value: "browser" },
+      { name: "Show a QR code", value: "qr" },
+    ],
+  });
+}
+
+async function presentDeviceAuth(
+  method: DeviceAuthMethod,
+  verificationUrl: string,
+  userCode: string
+): Promise<void> {
+  console.log(`Open this URL to continue: ${verificationUrl}`);
+  console.log(`Use code: ${userCode}`);
+
+  if (method === "browser") {
+    const opened = await openBrowser(verificationUrl);
+    if (!opened) {
+      console.log("Unable to open the browser automatically.");
+    }
+    return;
+  }
+
+  const qrCode = await renderQrCode(verificationUrl);
+  console.log(qrCode);
+}
+
+async function startDeviceAuth(
+  context: CommandContext
+): Promise<DeviceAuthStart> {
+  const response = await context.client.fetch("/v1/auth/device/start", {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    const errorPayload = await safeJson(response);
+    const message =
+      typeof errorPayload?.["error"] === "string"
+        ? errorPayload["error"]
+        : `Request failed with status ${response.status}`;
+    throw new Error(message);
+  }
+
+  const data = await safeJson(response);
+  const deviceCode = data?.["device_code"];
+  const userCode = data?.["user_code"];
+  const verificationUrl =
+    typeof data?.["verification_url"] === "string"
+      ? data["verification_url"]
+      : data?.["verification_uri"];
+  const verificationUriComplete = data?.["verification_uri_complete"];
+  const expiresIn = data?.["expires_in"];
+  const interval = data?.["interval"];
+
+  if (
+    typeof deviceCode !== "string" ||
+    typeof userCode !== "string" ||
+    typeof verificationUrl !== "string" ||
+    typeof expiresIn !== "number"
+  ) {
+    throw new Error("Invalid response from developer API.");
+  }
+
+  return {
+    device_code: deviceCode,
+    user_code: userCode,
+    verification_url: verificationUrl,
+    verification_uri_complete:
+      typeof verificationUriComplete === "string"
+        ? verificationUriComplete
+        : null,
+    expires_in: expiresIn,
+    interval: typeof interval === "number" && interval > 0 ? interval : 5,
+  };
+}
+
+async function pollForDeviceToken(
+  context: CommandContext,
+  deviceAuth: DeviceAuthStart
+): Promise<string> {
+  const expiresAt = Date.now() + deviceAuth.expires_in * 1000;
+  let intervalMs = deviceAuth.interval * 1000;
+
+  while (Date.now() < expiresAt) {
+    const outcome = await fetchDeviceToken(context, deviceAuth.device_code);
+    if (outcome.status === "success") {
+      return outcome.token;
+    }
+
+    if (typeof outcome.retryInMs === "number" && outcome.retryInMs > 0) {
+      intervalMs = outcome.retryInMs;
+    }
+
+    await sleep(intervalMs);
+  }
+
+  throw new Error("Login timed out. Please try again.");
+}
+
+async function fetchDeviceToken(
+  context: CommandContext,
+  deviceCode: string
+): Promise<DeviceAuthPollOutcome> {
+  const response = await context.client.fetch("/v1/auth/device/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ device_code: deviceCode }),
+  });
+
+  if (response.ok) {
+    const data = await safeJson(response);
+    const token =
+      typeof data?.["token"] === "string"
+        ? data["token"]
+        : typeof data?.["access_token"] === "string"
+          ? data["access_token"]
+          : null;
+    if (!token) {
+      throw new Error("Invalid response from developer API.");
+    }
+    return { status: "success", token };
+  }
+
+  if (response.status === 202) {
+    return { status: "pending" };
+  }
+
+  const errorPayload = await safeJson(response);
+  const errorCode =
+    typeof errorPayload?.["error"] === "string" ? errorPayload["error"] : null;
+
+  if (errorCode === "authorization_pending") {
+    return { status: "pending" };
+  }
+
+  if (errorCode === "slow_down") {
+    const retryIn = errorPayload?.["interval"];
+    const retryInMs =
+      typeof retryIn === "number" && retryIn > 0 ? retryIn * 1000 : undefined;
+    if (retryInMs !== undefined) {
+      return { status: "pending", retryInMs };
+    }
+    return { status: "pending" };
+  }
+
+  if (errorCode === "expired_token") {
+    throw new Error("Login expired. Please run the command again.");
+  }
+
+  if (errorCode === "access_denied") {
+    throw new Error("Login was canceled.");
+  }
+
+  const errorMessage =
+    typeof errorPayload?.["error_description"] === "string"
+      ? errorPayload["error_description"]
+      : typeof errorPayload?.["error"] === "string"
+        ? errorPayload["error"]
+        : `Request failed with status ${response.status}`;
+  throw new Error(errorMessage);
+}
+
+async function sleep(durationMs: number): Promise<void> {
+  await new Promise((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
 }
 
 async function fetchDeveloperMe(

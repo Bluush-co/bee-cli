@@ -6,6 +6,7 @@ Project notes for agents working in this repo.
 - Language: TypeScript with strict settings.
 - Sources live in `/sources`; entry point is `sources/main.ts`.
 - Subcommands live in `/sources/commands/<name>`.
+- Shared helpers live in `/sources/utils`.
 - Path alias: `@/` maps to `/sources`.
 - Build: `bun run build` -> `dist/bee` (binary name `bee`).
 - Package name: `bee-cli`.
