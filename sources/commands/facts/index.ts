@@ -4,6 +4,7 @@ import { printJson, requestDeveloperJson } from "@/commands/developerApi";
 const USAGE = [
   "bee [--staging] facts list [--limit N] [--cursor <cursor>] [--confirmed <true|false>]",
   "bee [--staging] facts get <id>",
+  "bee [--staging] facts create --text <text>",
 ].join("\n");
 
 export const factsCommand: Command = {
@@ -22,6 +23,9 @@ export const factsCommand: Command = {
         return;
       case "get":
         await handleGet(rest, context);
+        return;
+      case "create":
+        await handleCreate(rest, context);
         return;
       default:
         throw new Error(`Unknown facts subcommand: ${subcommand}`);
@@ -144,4 +148,58 @@ function parseId(args: readonly string[]): number {
     throw new Error("Fact id must be a positive integer.");
   }
   return parsed;
+}
+
+type CreateOptions = {
+  text: string;
+};
+
+async function handleCreate(
+  args: readonly string[],
+  context: CommandContext
+): Promise<void> {
+  const options = parseCreateArgs(args);
+  const data = await requestDeveloperJson(context, "/v1/facts", {
+    method: "POST",
+    json: { text: options.text },
+  });
+  printJson(data);
+}
+
+function parseCreateArgs(args: readonly string[]): CreateOptions {
+  let text: string | undefined;
+  const positionals: string[] = [];
+
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === undefined) {
+      continue;
+    }
+
+    if (arg === "--text") {
+      const value = args[i + 1];
+      if (value === undefined) {
+        throw new Error("--text requires a value");
+      }
+      text = value;
+      i += 1;
+      continue;
+    }
+
+    if (arg.startsWith("-")) {
+      throw new Error(`Unknown option: ${arg}`);
+    }
+
+    positionals.push(arg);
+  }
+
+  if (positionals.length > 0) {
+    throw new Error(`Unexpected arguments: ${positionals.join(" ")}`);
+  }
+
+  if (!text) {
+    throw new Error("Missing fact text. Provide --text.");
+  }
+
+  return { text };
 }
