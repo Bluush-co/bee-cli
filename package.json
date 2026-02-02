@@ -1,0 +1,24 @@
+{
+  "name": "bee-cli",
+  "version": "0.1.0",
+  "description": "CLI client for bee.computer",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "bee": "dist/bee"
+  },
+  "files": [
+    "dist/bee",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "bun build ./sources/main.ts --compile --outfile ./dist/bee",
+    "dev": "bun ./sources/main.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "typescript": "^5.7.3"
+  }
+}
