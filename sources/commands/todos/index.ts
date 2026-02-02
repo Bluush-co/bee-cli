@@ -6,6 +6,7 @@ const USAGE = [
   "bee [--staging] todos get <id>",
   "bee [--staging] todos create --text <text> [--alarm-at <iso>]",
   "bee [--staging] todos update <id> [--text <text>] [--completed <true|false>] [--alarm-at <iso> | --clear-alarm]",
+  "bee [--staging] todos delete <id>",
 ].join("\n");
 
 export const todosCommand: Command = {
@@ -30,6 +31,9 @@ export const todosCommand: Command = {
         return;
       case "update":
         await handleUpdate(rest, context);
+        return;
+      case "delete":
+        await handleDelete(rest, context);
         return;
       default:
         throw new Error(`Unknown todos subcommand: ${subcommand}`);
@@ -351,4 +355,15 @@ function parseBoolean(value: string, flagName: string): boolean {
     return false;
   }
   throw new Error(`${flagName} must be true or false`);
+}
+
+async function handleDelete(
+  args: readonly string[],
+  context: CommandContext
+): Promise<void> {
+  const id = parseId(args);
+  const data = await requestDeveloperJson(context, `/v1/todos/${id}`, {
+    method: "DELETE",
+  });
+  printJson(data);
 }
