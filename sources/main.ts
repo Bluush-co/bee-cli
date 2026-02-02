@@ -1,6 +1,7 @@
 import type { Command, CommandContext } from "@/commands/types";
 import { createDeveloperClient } from "@/client";
 import { authCommand } from "@/commands/auth";
+import { conversationsCommand } from "@/commands/conversations";
 import { factsCommand } from "@/commands/facts";
 import { pingCommand } from "@/commands/ping";
 import { todosCommand } from "@/commands/todos";
@@ -9,7 +10,14 @@ import type { Environment } from "@/environment";
 
 const BIN = "bee";
 
-const commands = [authCommand, factsCommand, pingCommand, todosCommand, versionCommand] satisfies readonly Command[];
+const commands = [
+  authCommand,
+  conversationsCommand,
+  factsCommand,
+  pingCommand,
+  todosCommand,
+  versionCommand,
+] satisfies readonly Command[];
 
 const commandIndex = new Map<string, Command>();
 for (const command of commands) {
