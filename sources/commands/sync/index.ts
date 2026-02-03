@@ -127,6 +127,8 @@ class MultiProgress {
   private readonly tasks: ProgressTask[] = [];
   private rendered = false;
   private readonly enabled = process.stdout.isTTY;
+  private spinnerIndex = 0;
+  private readonly spinnerFrames = ["|", "/", "-", "\\"];
 
   addTask(label: string): ProgressTask {
     const task = new ProgressTask(this, label);
@@ -145,7 +147,10 @@ class MultiProgress {
       return;
     }
 
-    const lines = this.tasks.map((task) => task.renderLine());
+    const spinner =
+      this.spinnerFrames[this.spinnerIndex % this.spinnerFrames.length] ?? "|";
+    this.spinnerIndex += 1;
+    const lines = this.tasks.map((task) => task.renderLine(spinner));
     if (!this.rendered) {
       process.stdout.write(lines.join("\n"));
       this.rendered = true;
@@ -165,7 +170,6 @@ class ProgressTask {
   private current = 0;
   private total = 0;
   private label: string;
-  private readonly width = 24;
 
   constructor(private readonly progress: MultiProgress, label: string) {
     this.label = label;
@@ -209,16 +213,10 @@ class ProgressTask {
     this.progress.render();
   }
 
-  renderLine(): string {
-    const total = this.total > 0 ? this.total : 1;
-    const ratio = Math.min(this.current / total, 1);
-    const filled = Math.round(ratio * this.width);
-    const empty = Math.max(this.width - filled, 0);
-    const bar = `${"#".repeat(filled)}${"-".repeat(empty)}`;
-    const percent = Math.round(ratio * 100);
+  renderLine(spinner: string): string {
     const label = this.label ? `${this.label}` : "";
-    const counts = `${this.current}/${this.total}`;
-    return `${label.padEnd(16)} [${bar}] ${counts} ${percent}%`;
+    const counts = `${this.current}`;
+    return `${label.padEnd(16)} ${spinner} ${counts}`;
   }
 }
 
@@ -472,7 +470,7 @@ async function fetchAllFacts(
     const data = await requestClientJson(context, path, { method: "GET" });
     const payload = parseFactsList(data);
     items.push(...payload.facts);
-    task.advance(1);
+    task.advance(payload.facts.length);
     if (!payload.next_cursor) {
       break;
     }
@@ -501,7 +499,7 @@ async function fetchAllTodos(
     const data = await requestClientJson(context, path, { method: "GET" });
     const payload = parseTodosList(data);
     items.push(...payload.todos);
-    task.advance(1);
+    task.advance(payload.todos.length);
     if (!payload.next_cursor) {
       break;
     }
@@ -530,7 +528,7 @@ async function fetchAllDailySummaries(
     const data = await requestClientJson(context, path, { method: "GET" });
     const payload = parseDailyList(data);
     items.push(...payload.daily_summaries);
-    task.advance(1);
+    task.advance(payload.daily_summaries.length);
     if (!payload.next_cursor) {
       break;
     }
@@ -561,7 +559,7 @@ async function fetchAllConversations(
     const data = await requestClientJson(context, path, { method: "GET" });
     const payload = parseConversationList(data);
     items.push(...payload.conversations);
-    task.advance(1);
+    task.advance(payload.conversations.length);
     if (!payload.next_cursor) {
       break;
     }
