@@ -24,11 +24,11 @@ type DevUser = {
 type DeviceAuthMethod = "browser" | "qr";
 
 const USAGE = [
-  "bee [--staging] auth login",
-  "bee [--staging] auth login --token <token>",
-  "bee [--staging] auth login --token-stdin",
-  "bee [--staging] auth status",
-  "bee [--staging] auth logout",
+  "bee auth login",
+  "bee auth login --token <token>",
+  "bee auth login --token-stdin",
+  "bee auth status",
+  "bee auth logout",
 ].join("\n");
 
 const DESCRIPTION =

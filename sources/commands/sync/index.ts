@@ -4,7 +4,7 @@ import type { Command, CommandContext } from "@/commands/types";
 import { requestDeveloperJson } from "@/commands/developerApi";
 
 const USAGE =
-  "bee [--staging] sync [--output <dir>] [--recent-days N] [--only <facts|todos|daily|conversations>]";
+  "bee sync [--output <dir>] [--recent-days N] [--only <facts|todos|daily|conversations>]";
 
 const DEFAULT_OUTPUT_DIR = "bee-sync";
 const DEFAULT_RECENT_DAYS = 3;

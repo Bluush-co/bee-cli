@@ -44,10 +44,7 @@ function isHelpFlag(value: string): boolean {
 }
 
 function printHelp(): void {
-  console.log(`${BIN} [--staging] <command> [options]`);
-  console.log("");
-  console.log("Global options:");
-  console.log("  --staging  Use the staging developer API.");
+  console.log(`${BIN} <command> [options]`);
   console.log("");
   console.log("Commands:");
 

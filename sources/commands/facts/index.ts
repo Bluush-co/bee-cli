@@ -2,11 +2,11 @@ import type { Command, CommandContext } from "@/commands/types";
 import { printJson, requestDeveloperJson } from "@/commands/developerApi";
 
 const USAGE = [
-  "bee [--staging] facts list [--limit N] [--cursor <cursor>] [--confirmed <true|false>]",
-  "bee [--staging] facts get <id>",
-  "bee [--staging] facts create --text <text>",
-  "bee [--staging] facts update <id> --text <text> [--confirmed <true|false>]",
-  "bee [--staging] facts delete <id>",
+  "bee facts list [--limit N] [--cursor <cursor>] [--confirmed <true|false>]",
+  "bee facts get <id>",
+  "bee facts create --text <text>",
+  "bee facts update <id> --text <text> [--confirmed <true|false>]",
+  "bee facts delete <id>",
 ].join("\n");
 
 export const factsCommand: Command = {

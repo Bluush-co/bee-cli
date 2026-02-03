@@ -1,7 +1,7 @@
 import type { Command } from "@/commands/types";
 import { printJson, requestDeveloperJson } from "@/commands/developerApi";
 
-const USAGE = "bee [--staging] me";
+const USAGE = "bee me";
 
 export const meCommand: Command = {
   name: "me",

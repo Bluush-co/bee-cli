@@ -2,7 +2,7 @@ import type { Command, CommandContext } from "@/commands/types";
 import { printJson, requestDeveloperJson } from "@/commands/developerApi";
 
 const USAGE =
-  "bee [--staging] search conversations --query <text> [--limit N] [--cursor <cursor>]";
+  "bee search conversations --query <text> [--limit N] [--cursor <cursor>]";
 
 export const searchCommand: Command = {
   name: "search",

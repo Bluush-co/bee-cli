@@ -2,11 +2,11 @@ import type { Command, CommandContext } from "@/commands/types";
 import { printJson, requestDeveloperJson } from "@/commands/developerApi";
 
 const USAGE = [
-  "bee [--staging] todos list [--limit N] [--cursor <cursor>]",
-  "bee [--staging] todos get <id>",
-  "bee [--staging] todos create --text <text> [--alarm-at <iso>]",
-  "bee [--staging] todos update <id> [--text <text>] [--completed <true|false>] [--alarm-at <iso> | --clear-alarm]",
-  "bee [--staging] todos delete <id>",
+  "bee todos list [--limit N] [--cursor <cursor>]",
+  "bee todos get <id>",
+  "bee todos create --text <text> [--alarm-at <iso>]",
+  "bee todos update <id> [--text <text>] [--completed <true|false>] [--alarm-at <iso> | --clear-alarm]",
+  "bee todos delete <id>",
 ].join("\n");
 
 export const todosCommand: Command = {

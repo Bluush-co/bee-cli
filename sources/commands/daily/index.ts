@@ -2,8 +2,8 @@ import type { Command, CommandContext } from "@/commands/types";
 import { printJson, requestDeveloperJson } from "@/commands/developerApi";
 
 const USAGE = [
-  "bee [--staging] daily list [--limit N]",
-  "bee [--staging] daily get <id>",
+  "bee daily list [--limit N]",
+  "bee daily get <id>",
 ].join("\n");
 
 export const dailyCommand: Command = {

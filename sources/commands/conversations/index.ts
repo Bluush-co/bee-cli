@@ -2,8 +2,8 @@ import type { Command, CommandContext } from "@/commands/types";
 import { printJson, requestDeveloperJson } from "@/commands/developerApi";
 
 const USAGE = [
-  "bee [--staging] conversations list [--limit N] [--cursor <cursor>]",
-  "bee [--staging] conversations get <id>",
+  "bee conversations list [--limit N] [--cursor <cursor>]",
+  "bee conversations get <id>",
 ].join("\n");
 
 export const conversationsCommand: Command = {
