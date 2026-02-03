@@ -1,6 +1,6 @@
-import { input, select } from "@inquirer/prompts";
+import { select } from "@inquirer/prompts";
 import type { Command, CommandContext } from "@/commands/types";
-import { getEnvironmentConfig } from "@/environment";
+import { getEnvironmentConfig, type Environment } from "@/environment";
 import { clearToken, loadToken, saveToken } from "@/secureStore";
 import {
   decryptAppPairingToken,
@@ -12,13 +12,6 @@ import { renderQrCode } from "@/utils/qrCode";
 type LoginOptions = {
   token?: string;
   tokenStdin: boolean;
-  skipVerify: boolean;
-  appId?: string;
-  pairingUrl?: string;
-};
-
-type StatusOptions = {
-  noVerify: boolean;
 };
 
 type DevUser = {
@@ -35,10 +28,10 @@ type AppPairingRequest =
   | { status: "expired"; requestId: string };
 
 const USAGE = [
-  "bee [--staging] auth login [--app-id <appId>] [--pairing-url <url>] [--skip-verify]",
-  "bee [--staging] auth login --token <token> [--skip-verify]",
-  "bee [--staging] auth login --token-stdin [--skip-verify]",
-  "bee [--staging] auth status [--no-verify]",
+  "bee [--staging] auth login",
+  "bee [--staging] auth login --token <token>",
+  "bee [--staging] auth login --token-stdin",
+  "bee [--staging] auth status",
   "bee [--staging] auth logout",
 ].join("\n");
 
@@ -91,7 +84,7 @@ async function handleLogin(
   }
 
   if (!token) {
-    token = await loginWithAppPairing(context, options);
+    token = await loginWithAppPairing(context);
   }
 
   if (!token) {
@@ -100,10 +93,7 @@ async function handleLogin(
 
   token = token.trim();
 
-  let user: DevUser | null = null;
-  if (!options.skipVerify) {
-    user = await fetchDeveloperMe(context, token);
-  }
+  const user = await fetchDeveloperMe(context, token);
 
   await saveToken(context.env, token);
 
@@ -117,10 +107,9 @@ async function handleLogin(
 }
 
 async function handleStatus(
-  args: readonly string[],
+  _args: readonly string[],
   context: CommandContext
 ): Promise<void> {
-  const options = parseStatusArgs(args);
   const token = await loadToken(context.env);
   const config = getEnvironmentConfig(context.env);
 
@@ -132,10 +121,6 @@ async function handleStatus(
 
   console.log(`API: ${config.label} (${config.apiUrl})`);
   console.log(`Token: ${maskToken(token)}`);
-
-  if (options.noVerify) {
-    return;
-  }
 
   const user = await fetchDeveloperMe(context, token);
   const name = [user.first_name, user.last_name].filter(Boolean).join(" ");
@@ -156,9 +141,6 @@ async function handleLogout(
 function parseLoginArgs(args: readonly string[]): LoginOptions {
   let token: string | undefined;
   let tokenStdin = false;
-  let skipVerify = false;
-  let appId: string | undefined;
-  let pairingUrl: string | undefined;
   const positionals: string[] = [];
 
   for (let i = 0; i < args.length; i += 1) {
@@ -182,31 +164,6 @@ function parseLoginArgs(args: readonly string[]): LoginOptions {
       continue;
     }
 
-    if (arg === "--app-id") {
-      const value = args[i + 1];
-      if (value === undefined) {
-        throw new Error("--app-id requires a value");
-      }
-      appId = value;
-      i += 1;
-      continue;
-    }
-
-    if (arg === "--pairing-url") {
-      const value = args[i + 1];
-      if (value === undefined) {
-        throw new Error("--pairing-url requires a value");
-      }
-      pairingUrl = value;
-      i += 1;
-      continue;
-    }
-
-    if (arg === "--skip-verify") {
-      skipVerify = true;
-      continue;
-    }
-
     if (arg.startsWith("-")) {
       throw new Error(`Unknown option: ${arg}`);
     }
@@ -218,41 +175,11 @@ function parseLoginArgs(args: readonly string[]): LoginOptions {
     throw new Error(`Unexpected arguments: ${positionals.join(" ")}`);
   }
 
-  const options: LoginOptions = { tokenStdin, skipVerify };
+  const options: LoginOptions = { tokenStdin };
   if (token !== undefined) {
     options.token = token;
   }
-  if (appId !== undefined) {
-    options.appId = appId;
-  }
-  if (pairingUrl !== undefined) {
-    options.pairingUrl = pairingUrl;
-  }
   return options;
-}
-
-function parseStatusArgs(args: readonly string[]): StatusOptions {
-  let noVerify = false;
-  const positionals: string[] = [];
-
-  for (const arg of args) {
-    if (arg === "--no-verify") {
-      noVerify = true;
-      continue;
-    }
-
-    if (arg.startsWith("-")) {
-      throw new Error(`Unknown option: ${arg}`);
-    }
-
-    positionals.push(arg);
-  }
-
-  if (positionals.length > 0) {
-    throw new Error(`Unexpected arguments: ${positionals.join(" ")}`);
-  }
-
-  return { noVerify };
 }
 
 async function readTokenFromStdin(): Promise<string> {
@@ -288,17 +215,14 @@ function maskToken(token: string): string {
   return `${trimmed.slice(0, 4)}...${trimmed.slice(-4)}`;
 }
 
-async function loginWithAppPairing(
-  context: CommandContext,
-  options: LoginOptions
-): Promise<string> {
+async function loginWithAppPairing(context: CommandContext): Promise<string> {
   if (!process.stdin.isTTY) {
     throw new Error(
       "Interactive login requires a TTY. Use --token or --token-stdin."
     );
   }
 
-  const appId = await resolveAppId(options.appId);
+  const appId = getDefaultAppId(context.env);
   const keyPair = generateAppPairingKeyPair();
   const publicKey = keyPair.publicKeyBase64;
   const secretKey = keyPair.secretKey;
@@ -313,7 +237,7 @@ async function loginWithAppPairing(
     throw new Error("Pairing request expired. Please try again.");
   }
 
-  const pairingUrl = buildPairingUrl(initial.requestId, options);
+  const pairingUrl = buildPairingUrl(initial.requestId);
   const method = await selectAuthMethod();
 
   await presentAppPairing(method, pairingUrl, initial.requestId);
@@ -325,19 +249,6 @@ async function loginWithAppPairing(
     secretKey,
     expiresAt: initial.expiresAt,
   });
-}
-
-async function resolveAppId(appId?: string): Promise<string> {
-  if (appId && appId.trim()) {
-    return appId.trim();
-  }
-
-  const response = await input({
-    message: "Enter the app ID to pair:",
-    validate: (value) => (value.trim().length > 0 ? true : "App ID is required"),
-  });
-
-  return response.trim();
 }
 
 async function selectAuthMethod(): Promise<DeviceAuthMethod> {
@@ -464,28 +375,12 @@ async function pollForAppToken(
   throw new Error("Login timed out. Please try again.");
 }
 
-function buildPairingUrl(requestId: string, options: LoginOptions): string {
-  if (options.pairingUrl) {
-    return applyPairingUrlTemplate(options.pairingUrl, requestId);
-  }
-
+function buildPairingUrl(requestId: string): string {
   return `https://bee.computer.connect/${requestId}`;
 }
 
-function applyPairingUrlTemplate(base: string, requestId: string): string {
-  const trimmed = base.trim();
-  if (trimmed.includes("{requestId}")) {
-    return trimmed.replace("{requestId}", requestId);
-  }
-
-  try {
-    const url = new URL(trimmed);
-    url.searchParams.set("requestId", requestId);
-    return url.toString();
-  } catch {
-    const separator = trimmed.includes("?") ? "&" : "?";
-    return `${trimmed}${separator}requestId=${encodeURIComponent(requestId)}`;
-  }
+function getDefaultAppId(_env: Environment): string {
+  return "ph9fssu1kv1b0hns69fxf7rx";
 }
 
 async function sleep(durationMs: number): Promise<void> {
