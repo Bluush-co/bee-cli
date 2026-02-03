@@ -14,7 +14,7 @@
   ],
   "scripts": {
     "build": "bun build ./sources/main.ts --compile --outfile ./dist/bee",
-    "build:all": "bun ./scripts/build-all.ts",
+    "build:all": "bash ./scripts/build-all.sh",
     "dev": "bun ./sources/main.ts",
     "typecheck": "tsc --noEmit"
   },
