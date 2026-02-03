@@ -112,6 +112,59 @@ export const syncCommand: Command = {
   },
 };
 
+class ProgressBar {
+  private current = 0;
+  private total = 0;
+  private label = "";
+  private readonly width = 28;
+  private readonly enabled = process.stdout.isTTY;
+
+  setLabel(label: string): void {
+    this.label = label;
+    this.render();
+  }
+
+  addTotal(amount: number): void {
+    if (amount <= 0) {
+      return;
+    }
+    this.total += amount;
+    this.render();
+  }
+
+  advance(amount = 1): void {
+    if (amount <= 0) {
+      return;
+    }
+    this.current += amount;
+    if (this.current > this.total) {
+      this.total = this.current;
+    }
+    this.render();
+  }
+
+  finish(): void {
+    if (this.enabled) {
+      process.stdout.write("\n");
+    }
+  }
+
+  private render(): void {
+    if (!this.enabled) {
+      return;
+    }
+    const total = this.total > 0 ? this.total : 1;
+    const ratio = Math.min(this.current / total, 1);
+    const filled = Math.round(ratio * this.width);
+    const empty = Math.max(this.width - filled, 0);
+    const bar = `${"#".repeat(filled)}${"-".repeat(empty)}`;
+    const percent = Math.round(ratio * 100);
+    const label = this.label ? ` ${this.label}` : "";
+    const text = `\r[${bar}] ${this.current}/${this.total} ${percent}%${label}`;
+    process.stdout.write(text);
+  }
+}
+
 function parseSyncArgs(args: readonly string[]): SyncOptions {
   let outputDir = DEFAULT_OUTPUT_DIR;
   let recentDays = DEFAULT_RECENT_DAYS;
@@ -165,13 +218,15 @@ async function syncAll(
   context: CommandContext,
   options: SyncOptions
 ): Promise<void> {
+  const progress = new ProgressBar();
   await mkdir(options.outputDir, { recursive: true });
 
-  const [facts, todos, dailySummaries] = await Promise.all([
-    fetchAllFacts(context),
-    fetchAllTodos(context),
-    fetchAllDailySummaries(context),
-  ]);
+  progress.setLabel("facts");
+  const facts = await fetchAllFacts(context, progress);
+  progress.setLabel("todos");
+  const todos = await fetchAllTodos(context, progress);
+  progress.setLabel("daily list");
+  const dailySummaries = await fetchAllDailySummaries(context, progress);
 
   await writeFactsMarkdown(options.outputDir, facts);
   await writeTodosMarkdown(options.outputDir, todos);
@@ -180,18 +235,22 @@ async function syncAll(
     return dailySortKey(a) - dailySortKey(b);
   });
 
+  const recent = [...sortedDaily]
+    .sort((a, b) => dailySortKey(b) - dailySortKey(a))
+    .slice(0, options.recentDays);
+  progress.addTotal(sortedDaily.length + recent.length);
   for (const summary of sortedDaily) {
-    await syncDailySummary(context, options.outputDir, summary.id);
+    progress.setLabel(`daily ${resolveDailyFolderName(summary)}`);
+    await syncDailySummary(context, options.outputDir, summary.id, progress);
   }
 
-  if (sortedDaily.length > 0) {
-    const recent = [...sortedDaily]
-      .sort((a, b) => dailySortKey(b) - dailySortKey(a))
-      .slice(0, options.recentDays);
+  if (recent.length > 0) {
     for (const summary of recent) {
-      await syncDailySummary(context, options.outputDir, summary.id);
+      progress.setLabel(`recent ${resolveDailyFolderName(summary)}`);
+      await syncDailySummary(context, options.outputDir, summary.id, progress);
     }
   }
+  progress.finish();
 }
 
 function dailySortKey(summary: DailySummary): number {
@@ -204,9 +263,13 @@ function dailySortKey(summary: DailySummary): number {
   return summary.id;
 }
 
-async function fetchAllFacts(context: CommandContext): Promise<Fact[]> {
+async function fetchAllFacts(
+  context: CommandContext,
+  progress: ProgressBar
+): Promise<Fact[]> {
   const items: Fact[] = [];
   let cursor: string | undefined;
+  progress.addTotal(1);
 
   while (true) {
     const params = new URLSearchParams();
@@ -217,18 +280,24 @@ async function fetchAllFacts(context: CommandContext): Promise<Fact[]> {
     const data = await requestDeveloperJson(context, path, { method: "GET" });
     const payload = parseFactsList(data);
     items.push(...payload.facts);
+    progress.advance(1);
     if (!payload.next_cursor) {
       break;
     }
+    progress.addTotal(1);
     cursor = payload.next_cursor;
   }
 
   return items;
 }
 
-async function fetchAllTodos(context: CommandContext): Promise<Todo[]> {
+async function fetchAllTodos(
+  context: CommandContext,
+  progress: ProgressBar
+): Promise<Todo[]> {
   const items: Todo[] = [];
   let cursor: string | undefined;
+  progress.addTotal(1);
 
   while (true) {
     const params = new URLSearchParams();
@@ -239,9 +308,11 @@ async function fetchAllTodos(context: CommandContext): Promise<Todo[]> {
     const data = await requestDeveloperJson(context, path, { method: "GET" });
     const payload = parseTodosList(data);
     items.push(...payload.todos);
+    progress.advance(1);
     if (!payload.next_cursor) {
       break;
     }
+    progress.addTotal(1);
     cursor = payload.next_cursor;
   }
 
@@ -249,27 +320,33 @@ async function fetchAllTodos(context: CommandContext): Promise<Todo[]> {
 }
 
 async function fetchAllDailySummaries(
-  context: CommandContext
+  context: CommandContext,
+  progress: ProgressBar
 ): Promise<DailySummary[]> {
   const items: DailySummary[] = [];
+  progress.addTotal(1);
   const data = await requestDeveloperJson(context, "/v1/daily?limit=100", {
     method: "GET",
   });
   const payload = parseDailyList(data);
   items.push(...payload.daily_summaries);
+  progress.advance(1);
   return items;
 }
 
 async function syncDailySummary(
   context: CommandContext,
   outputDir: string,
-  dailyId: number
+  dailyId: number,
+  progress: ProgressBar
 ): Promise<void> {
   const data = await requestDeveloperJson(context, `/v1/daily/${dailyId}`, {
     method: "GET",
   });
   const payload = parseDailyDetail(data);
   const daily = payload.daily_summary;
+  const conversationCount = daily.conversations?.length ?? 0;
+  progress.addTotal(conversationCount);
 
   const folderName = resolveDailyFolderName(daily);
   const dailyDir = path.join(outputDir, "daily", folderName);
@@ -280,6 +357,7 @@ async function syncDailySummary(
   await writeFile(path.join(dailyDir, "summary.md"), summaryMarkdown, "utf8");
 
   if (daily.conversations && daily.conversations.length > 0) {
+    progress.setLabel("conversations");
     for (const conversation of daily.conversations) {
       const detail = await fetchConversation(context, conversation.id);
       const markdown = formatConversationMarkdown(detail);
@@ -288,8 +366,10 @@ async function syncDailySummary(
         markdown,
         "utf8"
       );
+      progress.advance(1);
     }
   }
+  progress.advance(1);
 }
 
 async function fetchConversation(
