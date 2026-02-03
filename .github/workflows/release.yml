@@ -31,18 +31,11 @@ jobs:
         run: bun test
 
       - name: Build
-        run: bun run build
-
-      - name: Prepare release asset
-        id: asset
-        run: |
-          OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
-          ARCH="$(uname -m)"
-          NAME="bee-${OS}-${ARCH}.tar.gz"
-          tar -czf "${NAME}" -C dist bee
-          echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+        run: bun run build:all
 
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.asset.outputs.name }}
+          files: |
+            dist/bee-*.tar.gz
+            dist/bee-*.zip
