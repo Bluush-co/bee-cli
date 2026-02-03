@@ -85,6 +85,22 @@ bee <command> [options]
 
 - `version` - Print the CLI version. Use `--json` for JSON output.
 
+## Build
+
+Single-platform build:
+
+```bash
+bun run build
+```
+
+Multi-platform build (linux/mac/windows, x64/arm64):
+
+```bash
+bun run build:all
+```
+
+Artifacts are written to `dist/platforms/<target>/`.
+
 ## Sync Command
 
 The `sync` command exports all your Bee data to a local directory as markdown files.
