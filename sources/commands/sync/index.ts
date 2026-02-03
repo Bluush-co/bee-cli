@@ -132,6 +132,8 @@ class MultiProgress {
   private readonly tasks: ProgressTask[] = [];
   private rendered = false;
   private readonly enabled = process.stdout.isTTY;
+  private spinnerIndex = 0;
+  private ticker: ReturnType<typeof setInterval> | null = null;
   private readonly spinnerFrames = [
     "⠋",
     "⠙",
@@ -145,7 +147,23 @@ class MultiProgress {
     "⠏",
   ];
   private readonly spinnerIntervalMs = 80;
-  private readonly spinnerStart = Date.now();
+
+  constructor() {
+    if (!this.enabled) {
+      return;
+    }
+    this.ticker = setInterval(() => {
+      if (this.tasks.length === 0) {
+        return;
+      }
+      if (!this.tasks.some((task) => task.isActive())) {
+        return;
+      }
+      this.advanceSpinner();
+      this.render();
+    }, this.spinnerIntervalMs);
+    this.ticker.unref?.();
+  }
 
   addTask(label: string): ProgressTask {
     const task = new ProgressTask(this, label);
@@ -154,6 +172,10 @@ class MultiProgress {
   }
 
   finish(): void {
+    if (this.ticker) {
+      clearInterval(this.ticker);
+      this.ticker = null;
+    }
     if (this.enabled && this.rendered) {
       process.stdout.write("\n");
     }
@@ -164,11 +186,7 @@ class MultiProgress {
       return;
     }
 
-    const frameIndex = Math.floor(
-      (Date.now() - this.spinnerStart) / this.spinnerIntervalMs
-    );
-    const spinner =
-      this.spinnerFrames[frameIndex % this.spinnerFrames.length] ?? "⠋";
+    const spinner = this.currentSpinner();
     const lines = this.tasks.map((task) => task.renderLine(spinner));
     if (!this.rendered) {
       process.stdout.write(lines.join("\n"));
@@ -183,12 +201,24 @@ class MultiProgress {
       process.stdout.write("\n");
     }
   }
+
+  private currentSpinner(): string {
+    return this.spinnerFrames[this.spinnerIndex] ?? "⠋";
+  }
+
+  private advanceSpinner(): void {
+    if (this.spinnerFrames.length === 0) {
+      return;
+    }
+    this.spinnerIndex = (this.spinnerIndex + 1) % this.spinnerFrames.length;
+  }
 }
 
 class ProgressTask {
   private current = 0;
   private total = 0;
   private label: string;
+  private active = true;
 
   constructor(private readonly progress: MultiProgress, label: string) {
     this.label = label;
@@ -229,13 +259,24 @@ class ProgressTask {
   reset(): void {
     this.current = 0;
     this.total = 0;
+    this.active = true;
     this.progress.render();
+  }
+
+  complete(): void {
+    this.active = false;
+    this.progress.render();
+  }
+
+  isActive(): boolean {
+    return this.active;
   }
 
   renderLine(spinner: string): string {
     const label = this.label ? `${this.label}` : "";
+    const indicator = this.active ? spinner : " ";
     const counts = `${this.current}`;
-    return `${label.padEnd(16)} ${spinner} ${counts}`;
+    return `${label.padEnd(16)} ${indicator} ${counts}`;
   }
 }
 
@@ -380,14 +421,17 @@ async function syncAll(
   ]);
   if (factsTask) {
     factsTask.setLabel("facts done");
+    factsTask.complete();
     await writeFactsMarkdown(options.outputDir, facts);
   }
   if (todosTask) {
     todosTask.setLabel("todos done");
+    todosTask.complete();
     await writeTodosMarkdown(options.outputDir, todos);
   }
   if (dailyListTask) {
     dailyListTask.setLabel("daily list done");
+    dailyListTask.complete();
   }
 
   if (options.targets.has("daily") && dailySyncTask && dailyConversationTask) {
@@ -424,7 +468,9 @@ async function syncAll(
       }
     }
     dailySyncTask.setLabel("daily sync done");
+    dailySyncTask.complete();
     dailyConversationTask.setLabel("conversations done");
+    dailyConversationTask.complete();
   }
 
   if (options.targets.has("conversations") && conversationTask) {
@@ -433,6 +479,7 @@ async function syncAll(
       : [];
     if (conversationListTask) {
       conversationListTask.setLabel("conversation list done");
+      conversationListTask.complete();
     }
 
     const sortedConversations = [...conversations].sort(
@@ -460,6 +507,7 @@ async function syncAll(
       }
     );
     conversationTask.setLabel("all conversations done");
+    conversationTask.complete();
   }
   progress.finish();
 }
