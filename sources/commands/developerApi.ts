@@ -16,7 +16,7 @@ type JsonRequestInit = RequestInit & {
 export async function requireToken(context: CommandContext): Promise<string> {
   const token = await loadToken(context.env);
   if (!token) {
-    throw new Error('Not logged in. Run "bee auth login" first.');
+    throw new Error('Not logged in. Run "bee login" first.');
   }
   return token;
 }

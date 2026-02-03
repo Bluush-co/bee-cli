@@ -1,8 +1,8 @@
 import { select } from "@inquirer/prompts";
 import type { Command, CommandContext } from "@/commands/types";
-import { getEnvironmentConfig, type Environment } from "@/environment";
-import { clearToken, loadToken, saveToken } from "@/secureStore";
-import { requestAppPairing } from "./appPairingRequest";
+import type { Environment } from "@/environment";
+import { saveToken } from "@/secureStore";
+import { requestAppPairing } from "@/commands/auth/appPairingRequest";
 import {
   decryptAppPairingToken,
   generateAppPairingKeyPair,
@@ -10,54 +10,27 @@ import {
 import { emojiHash } from "@/utils/emojiHash";
 import { openBrowser } from "@/utils/browser";
 import { renderQrCode } from "@/utils/qrCode";
+import { fetchDeveloperMe } from "@/commands/auth/developerMe";
 
 type LoginOptions = {
   token?: string;
   tokenStdin: boolean;
 };
 
-type DevUser = {
-  id: number;
-  first_name: string;
-  last_name: string | null;
-};
-
 type DeviceAuthMethod = "browser" | "qr";
 
 const USAGE = [
-  "bee auth login",
-  "bee auth login --token <token>",
-  "bee auth login --token-stdin",
-  "bee auth status",
-  "bee auth logout",
+  "bee login",
+  "bee login --token <token>",
+  "bee login --token-stdin",
 ].join("\n");
 
-const DESCRIPTION =
-  "Manage developer API authentication (app tokens with embedded secrets).";
-
-export const authCommand: Command = {
-  name: "auth",
-  description: DESCRIPTION,
+export const loginCommand: Command = {
+  name: "login",
+  description: "Authenticate the CLI with your Bee account.",
   usage: USAGE,
   run: async (args, context) => {
-    if (args.length === 0) {
-      throw new Error("Missing subcommand. Use login, status, or logout.");
-    }
-
-    const [subcommand, ...rest] = args;
-    switch (subcommand) {
-      case "login":
-        await handleLogin(rest, context);
-        return;
-      case "status":
-        await handleStatus(rest, context);
-        return;
-      case "logout":
-        await handleLogout(rest, context);
-        return;
-      default:
-        throw new Error(`Unknown auth subcommand: ${subcommand}`);
-    }
+    await handleLogin(args, context);
   },
 };
 
@@ -101,41 +74,6 @@ async function handleLogin(
   }
 
   console.log("Token stored.");
-}
-
-async function handleStatus(
-  _args: readonly string[],
-  context: CommandContext
-): Promise<void> {
-  if (_args.length > 0) {
-    throw new Error("status does not accept arguments.");
-  }
-  const token = await loadToken(context.env);
-  const config = getEnvironmentConfig(context.env);
-
-  if (!token) {
-    console.log("Not logged in.");
-    console.log(`API: ${config.label} (${config.apiUrl})`);
-    return;
-  }
-
-  console.log(`API: ${config.label} (${config.apiUrl})`);
-  console.log(`Token: ${maskToken(token)}`);
-
-  const user = await fetchDeveloperMe(context, token);
-  const name = [user.first_name, user.last_name].filter(Boolean).join(" ");
-  console.log(`Verified as ${name} (id ${user.id}).`);
-}
-
-async function handleLogout(
-  args: readonly string[],
-  context: CommandContext
-): Promise<void> {
-  if (args.length > 0) {
-    throw new Error("logout does not accept arguments.");
-  }
-  await clearToken(context.env);
-  console.log("Logged out.");
 }
 
 function parseLoginArgs(args: readonly string[]): LoginOptions {
@@ -205,14 +143,6 @@ async function readTokenFromStdin(): Promise<string> {
       resolve(chunks.join("").trim());
     });
   });
-}
-
-function maskToken(token: string): string {
-  const trimmed = token.trim();
-  if (trimmed.length <= 8) {
-    return "********";
-  }
-  return `${trimmed.slice(0, 4)}...${trimmed.slice(-4)}`;
 }
 
 async function loginWithAppPairing(context: CommandContext): Promise<string> {
@@ -355,52 +285,4 @@ async function sleep(durationMs: number): Promise<void> {
   await new Promise((resolve) => {
     setTimeout(resolve, durationMs);
   });
-}
-
-async function fetchDeveloperMe(
-  context: CommandContext,
-  token: string
-): Promise<DevUser> {
-  const response = await context.client.fetch("/v1/me", {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
-
-  if (!response.ok) {
-    const errorPayload = await safeJson(response);
-    const message =
-      typeof errorPayload?.["error"] === "string"
-        ? errorPayload["error"]
-        : `Request failed with status ${response.status}`;
-    throw new Error(message);
-  }
-
-  const data = await safeJson(response);
-  const id = data?.["id"];
-  const firstName = data?.["first_name"];
-  if (typeof id !== "number" || typeof firstName !== "string") {
-    throw new Error("Invalid response from developer API.");
-  }
-
-  return {
-    id,
-    first_name: firstName,
-    last_name: typeof data?.["last_name"] === "string" ? data["last_name"] : null,
-  };
-}
-
-async function safeJson(
-  response: Response
-): Promise<Record<string, unknown> | null> {
-  try {
-    const parsed = (await response.json()) as Record<string, unknown>;
-    if (!parsed || typeof parsed !== "object") {
-      return null;
-    }
-    return parsed;
-  } catch {
-    return null;
-  }
 }

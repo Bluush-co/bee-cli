@@ -43,10 +43,9 @@ bee <command> [options]
 
 ## Commands
 
-- `auth` - Authenticate the CLI with your Bee account.
-  - `auth login` - Log in interactively, or with `--token <token>` / `--token-stdin`.
-  - `auth status` - Show current authentication status.
-  - `auth logout` - Log out and clear stored credentials.
+- `login` - Log in interactively, or with `--token <token>` / `--token-stdin`.
+- `status` - Show current authentication status.
+- `logout` - Log out and clear stored credentials.
 
 - `me` - Fetch your user profile.
 

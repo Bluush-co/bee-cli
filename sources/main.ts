@@ -1,13 +1,15 @@
 import type { Command, CommandContext } from "@/commands/types";
 import { createDeveloperClient } from "@/client";
-import { authCommand } from "@/commands/auth";
 import { conversationsCommand } from "@/commands/conversations";
 import { dailyCommand } from "@/commands/daily";
 import { factsCommand } from "@/commands/facts";
+import { loginCommand } from "@/commands/login";
+import { logoutCommand } from "@/commands/logout";
 import { meCommand } from "@/commands/me";
 import { pingCommand } from "@/commands/ping";
 import { proxyCommand } from "@/commands/proxy";
 import { searchCommand } from "@/commands/search";
+import { statusCommand } from "@/commands/status";
 import { syncCommand } from "@/commands/sync";
 import { todosCommand } from "@/commands/todos";
 import { todayCommand } from "@/commands/today";
@@ -17,7 +19,9 @@ import type { Environment } from "@/environment";
 const BIN = "bee";
 
 const commands = [
-  authCommand,
+  loginCommand,
+  logoutCommand,
+  statusCommand,
   todayCommand,
   conversationsCommand,
   dailyCommand,
