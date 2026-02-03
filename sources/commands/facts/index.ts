@@ -1,5 +1,5 @@
 import type { Command, CommandContext } from "@/commands/types";
-import { printJson, requestDeveloperJson } from "@/commands/developerApi";
+import { printJson, requestClientJson } from "@/client/clientApi";
 
 const USAGE = [
   "bee facts list [--limit N] [--cursor <cursor>] [--confirmed <true|false>]",
@@ -66,7 +66,7 @@ async function handleList(
 
   const suffix = params.toString();
   const path = suffix ? `/v1/facts?${suffix}` : "/v1/facts";
-  const data = await requestDeveloperJson(context, path, { method: "GET" });
+  const data = await requestClientJson(context, path, { method: "GET" });
   printJson(data);
 }
 
@@ -137,7 +137,7 @@ async function handleGet(
   context: CommandContext
 ): Promise<void> {
   const id = parseId(args);
-  const data = await requestDeveloperJson(context, `/v1/facts/${id}`, {
+  const data = await requestClientJson(context, `/v1/facts/${id}`, {
     method: "GET",
   });
   printJson(data);
@@ -167,7 +167,7 @@ async function handleCreate(
   context: CommandContext
 ): Promise<void> {
   const options = parseCreateArgs(args);
-  const data = await requestDeveloperJson(context, "/v1/facts", {
+  const data = await requestClientJson(context, "/v1/facts", {
     method: "POST",
     json: { text: options.text },
   });
@@ -228,7 +228,7 @@ async function handleUpdate(
     body.confirmed = options.confirmed;
   }
 
-  const data = await requestDeveloperJson(context, `/v1/facts/${options.id}`, {
+  const data = await requestClientJson(context, `/v1/facts/${options.id}`, {
     method: "PUT",
     json: body,
   });
@@ -311,7 +311,7 @@ async function handleDelete(
   context: CommandContext
 ): Promise<void> {
   const id = parseId(args);
-  const data = await requestDeveloperJson(context, `/v1/facts/${id}`, {
+  const data = await requestClientJson(context, `/v1/facts/${id}`, {
     method: "DELETE",
   });
   printJson(data);

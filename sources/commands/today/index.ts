@@ -1,5 +1,5 @@
 import type { Command } from "@/commands/types";
-import { printJson, requestDeveloperJson } from "@/commands/developerApi";
+import { printJson, requestClientJson } from "@/client/clientApi";
 
 const USAGE = "bee today";
 
@@ -12,7 +12,7 @@ export const todayCommand: Command = {
       throw new Error(`Unexpected arguments: ${args.join(" ")}`);
     }
 
-    const data = await requestDeveloperJson(context, "/v1/todayBrief", {
+    const data = await requestClientJson(context, "/v1/todayBrief", {
       method: "GET",
     });
     printJson(data);

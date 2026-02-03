@@ -1,5 +1,5 @@
 import type { Command, CommandContext } from "@/commands/types";
-import { printJson, requestDeveloperJson } from "@/commands/developerApi";
+import { printJson, requestClientJson } from "@/client/clientApi";
 
 const USAGE =
   "bee search conversations --query <text> [--limit N] [--cursor <cursor>]";
@@ -46,7 +46,7 @@ async function handleConversations(
     body.cursor = options.cursor;
   }
 
-  const data = await requestDeveloperJson(context, "/v1/search/conversations", {
+  const data = await requestClientJson(context, "/v1/search/conversations", {
     method: "POST",
     json: body,
   });

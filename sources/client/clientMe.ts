@@ -1,15 +1,15 @@
 import type { CommandContext } from "@/commands/types";
 
-type DevUser = {
+type ClientUser = {
   id: number;
   first_name: string;
   last_name: string | null;
 };
 
-export async function fetchDeveloperMe(
+export async function fetchClientMe(
   context: CommandContext,
   token: string
-): Promise<DevUser> {
+): Promise<ClientUser> {
   const response = await context.client.fetch("/v1/me", {
     method: "GET",
     headers: {
@@ -30,7 +30,7 @@ export async function fetchDeveloperMe(
   const id = data?.["id"];
   const firstName = data?.["first_name"];
   if (typeof id !== "number" || typeof firstName !== "string") {
-    throw new Error("Invalid response from developer API.");
+    throw new Error("Invalid response from API.");
   }
 
   return {

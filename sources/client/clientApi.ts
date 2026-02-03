@@ -13,7 +13,7 @@ type JsonRequestInit = RequestInit & {
   json?: JsonValue;
 };
 
-export async function requireToken(context: CommandContext): Promise<string> {
+export async function requireClientToken(context: CommandContext): Promise<string> {
   const token = await loadToken(context.env);
   if (!token) {
     throw new Error('Not logged in. Run "bee login" first.');
@@ -21,12 +21,12 @@ export async function requireToken(context: CommandContext): Promise<string> {
   return token;
 }
 
-export async function requestDeveloperJson(
+export async function requestClientJson(
   context: CommandContext,
   path: string,
   init: JsonRequestInit = {}
 ): Promise<unknown> {
-  const token = await requireToken(context);
+  const token = await requireClientToken(context);
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${token}`);
 

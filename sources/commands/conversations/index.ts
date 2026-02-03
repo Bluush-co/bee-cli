@@ -1,5 +1,5 @@
 import type { Command, CommandContext } from "@/commands/types";
-import { printJson, requestDeveloperJson } from "@/commands/developerApi";
+import { printJson, requestClientJson } from "@/client/clientApi";
 
 const USAGE = [
   "bee conversations list [--limit N] [--cursor <cursor>]",
@@ -50,7 +50,7 @@ async function handleList(
 
   const suffix = params.toString();
   const path = suffix ? `/v1/conversations?${suffix}` : "/v1/conversations";
-  const data = await requestDeveloperJson(context, path, { method: "GET" });
+  const data = await requestClientJson(context, path, { method: "GET" });
   printJson(data);
 }
 
@@ -107,7 +107,7 @@ async function handleGet(
   context: CommandContext
 ): Promise<void> {
   const id = parseId(args);
-  const data = await requestDeveloperJson(context, `/v1/conversations/${id}`, {
+  const data = await requestClientJson(context, `/v1/conversations/${id}`, {
     method: "GET",
   });
   printJson(data);

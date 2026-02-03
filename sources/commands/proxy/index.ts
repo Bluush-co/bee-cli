@@ -1,5 +1,5 @@
 import type { Command, CommandContext } from "@/commands/types";
-import { requireToken } from "@/commands/developerApi";
+import { requireClientToken } from "@/client/clientApi";
 
 const USAGE = "bee proxy [--port N]";
 const DEFAULT_PORT = 8787;
@@ -76,7 +76,7 @@ async function startProxy(
   context: CommandContext,
   options: ProxyOptions
 ): Promise<void> {
-  const token = await requireToken(context);
+  const token = await requireClientToken(context);
   const port = await pickPort(options.port);
   const hostname = "127.0.0.1";
 

@@ -10,7 +10,7 @@ import {
 import { emojiHash } from "@/utils/emojiHash";
 import { openBrowser } from "@/utils/browser";
 import { renderQrCode } from "@/utils/qrCode";
-import { fetchDeveloperMe } from "@/commands/auth/developerMe";
+import { fetchClientMe } from "@/client/clientMe";
 
 type LoginOptions = {
   token?: string;
@@ -63,7 +63,7 @@ async function handleLogin(
 
   token = token.trim();
 
-  const user = await fetchDeveloperMe(context, token);
+  const user = await fetchClientMe(context, token);
 
   await saveToken(context.env, token);
 

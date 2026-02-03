@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Command, CommandContext } from "@/commands/types";
-import { requestDeveloperJson } from "@/commands/developerApi";
+import { requestClientJson } from "@/client/clientApi";
 
 const USAGE =
   "bee sync [--output <dir>] [--recent-days N] [--only <facts|todos|daily|conversations>]";
@@ -469,7 +469,7 @@ async function fetchAllFacts(
       params.set("cursor", cursor);
     }
     const path = params.toString() ? `/v1/facts?${params}` : "/v1/facts";
-    const data = await requestDeveloperJson(context, path, { method: "GET" });
+    const data = await requestClientJson(context, path, { method: "GET" });
     const payload = parseFactsList(data);
     items.push(...payload.facts);
     task.advance(1);
@@ -498,7 +498,7 @@ async function fetchAllTodos(
       params.set("cursor", cursor);
     }
     const path = params.toString() ? `/v1/todos?${params}` : "/v1/todos";
-    const data = await requestDeveloperJson(context, path, { method: "GET" });
+    const data = await requestClientJson(context, path, { method: "GET" });
     const payload = parseTodosList(data);
     items.push(...payload.todos);
     task.advance(1);
@@ -518,7 +518,7 @@ async function fetchAllDailySummaries(
 ): Promise<DailySummary[]> {
   const items: DailySummary[] = [];
   task.addTotal(1);
-  const data = await requestDeveloperJson(context, "/v1/daily?limit=100", {
+  const data = await requestClientJson(context, "/v1/daily?limit=100", {
     method: "GET",
   });
   const payload = parseDailyList(data);
@@ -544,7 +544,7 @@ async function fetchAllConversations(
     const path = params.toString()
       ? `/v1/conversations?${params}`
       : "/v1/conversations";
-    const data = await requestDeveloperJson(context, path, { method: "GET" });
+    const data = await requestClientJson(context, path, { method: "GET" });
     const payload = parseConversationList(data);
     items.push(...payload.conversations);
     task.advance(1);
@@ -569,7 +569,7 @@ async function syncDailySummary(
   dailyTask: ProgressTask,
   conversationTask: ProgressTask
 ): Promise<void> {
-  const data = await requestDeveloperJson(context, `/v1/daily/${dailyId}`, {
+  const data = await requestClientJson(context, `/v1/daily/${dailyId}`, {
     method: "GET",
   });
   const payload = parseDailyDetail(data);
@@ -611,7 +611,7 @@ async function fetchConversation(
   context: CommandContext,
   id: number
 ): Promise<ConversationDetail> {
-  const data = await requestDeveloperJson(
+  const data = await requestClientJson(
     context,
     `/v1/conversations/${id}`,
     { method: "GET" }
