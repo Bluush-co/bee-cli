@@ -2,7 +2,10 @@ import { input, select } from "@inquirer/prompts";
 import type { Command, CommandContext } from "@/commands/types";
 import { getEnvironmentConfig } from "@/environment";
 import { clearToken, loadToken, saveToken } from "@/secureStore";
-import { decryptRsaOaepBase64, generateRsaKeyPair } from "@/utils/rsa";
+import {
+  decryptAppPairingToken,
+  generateAppPairingKeyPair,
+} from "@/utils/appPairingCrypto";
 import { openBrowser } from "@/utils/browser";
 import { renderQrCode } from "@/utils/qrCode";
 
@@ -296,14 +299,14 @@ async function loginWithAppPairing(
   }
 
   const appId = await resolveAppId(options.appId);
-  const keyPair = generateRsaKeyPair();
-  const publicKey = keyPair.publicKeyPem.trim();
-  const privateKey = keyPair.privateKeyPem.trim();
+  const keyPair = generateAppPairingKeyPair();
+  const publicKey = keyPair.publicKeyBase64;
+  const secretKey = keyPair.secretKey;
 
   const initial = await requestAppPairing(context, appId, publicKey);
 
   if (initial.status === "completed") {
-    return decryptAppToken(initial.encryptedToken, privateKey);
+    return decryptAppPairingToken(initial.encryptedToken, secretKey);
   }
 
   if (initial.status === "expired") {
@@ -319,7 +322,7 @@ async function loginWithAppPairing(
   return await pollForAppToken(context, {
     appId,
     publicKey,
-    privateKey,
+    secretKey,
     expiresAt: initial.expiresAt,
   });
 }
@@ -432,7 +435,7 @@ async function pollForAppToken(
   opts: {
     appId: string;
     publicKey: string;
-    privateKey: string;
+    secretKey: Uint8Array;
     expiresAt: string;
   }
 ): Promise<string> {
@@ -450,7 +453,7 @@ async function pollForAppToken(
       opts.publicKey
     );
     if (outcome.status === "completed") {
-      return decryptAppToken(outcome.encryptedToken, opts.privateKey);
+      return decryptAppPairingToken(outcome.encryptedToken, opts.secretKey);
     }
     if (outcome.status === "expired") {
       throw new Error("Pairing request expired. Please try again.");
@@ -483,14 +486,6 @@ function applyPairingUrlTemplate(base: string, requestId: string): string {
     const separator = trimmed.includes("?") ? "&" : "?";
     return `${trimmed}${separator}requestId=${encodeURIComponent(requestId)}`;
   }
-}
-
-function decryptAppToken(encryptedToken: string, privateKey: string): string {
-  const token = decryptRsaOaepBase64(encryptedToken, privateKey).trim();
-  if (!token) {
-    throw new Error("Invalid response from developer API.");
-  }
-  return token;
 }
 
 async function sleep(durationMs: number): Promise<void> {
