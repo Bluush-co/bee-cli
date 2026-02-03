@@ -230,7 +230,7 @@ async function loginWithAppPairing(context: CommandContext): Promise<string> {
   const publicKey = keyPair.publicKeyBase64;
   const secretKey = keyPair.secretKey;
 
-  const { result: initial, baseUrl, path } = await requestAppPairing(
+  const { result: initial, baseUrl } = await requestAppPairing(
     context,
     appId,
     publicKey
@@ -256,7 +256,6 @@ async function loginWithAppPairing(context: CommandContext): Promise<string> {
     secretKey,
     expiresAt: initial.expiresAt,
     baseUrl,
-    path,
   });
 }
 
@@ -294,29 +293,25 @@ async function requestAppPairing(
   context: CommandContext,
   appId: string,
   publicKey: string
-): Promise<{ result: AppPairingRequest; baseUrl: string; path: string }> {
+): Promise<{ result: AppPairingRequest; baseUrl: string }> {
   const candidates = getPairingApiCandidates(context.env);
-  const paths = getPairingPathCandidates();
   let lastError: Error | null = null;
 
   for (const baseUrl of candidates) {
-    for (const path of paths) {
-      try {
-        const result = await requestAppPairingWithBase(
-          context,
-          appId,
-          publicKey,
-          baseUrl,
-          path
-        );
-        return { result, baseUrl, path };
-      } catch (error) {
-        if (error instanceof PairingEndpointNotFoundError) {
-          lastError = error;
-          continue;
-        }
-        throw error;
+    try {
+      const result = await requestAppPairingWithBase(
+        context,
+        appId,
+        publicKey,
+        baseUrl
+      );
+      return { result, baseUrl };
+    } catch (error) {
+      if (error instanceof PairingEndpointNotFoundError) {
+        lastError = error;
+        continue;
       }
+      throw error;
     }
   }
 
@@ -330,10 +325,9 @@ async function requestAppPairingWithBase(
   context: CommandContext,
   appId: string,
   publicKey: string,
-  baseUrl: string,
-  path: string
+  baseUrl: string
 ): Promise<AppPairingRequest> {
-  const response = await fetchPairing(context.env, baseUrl, path, {
+  const response = await fetchPairing(context.env, baseUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -402,7 +396,6 @@ async function pollForAppToken(
     secretKey: Uint8Array;
     expiresAt: string;
     baseUrl: string;
-    path: string;
   }
 ): Promise<string> {
   const expiresAtMs = Date.parse(opts.expiresAt);
@@ -418,7 +411,6 @@ async function pollForAppToken(
       opts.appId,
       opts.publicKey,
       opts.baseUrl,
-      opts.path
     );
     if (outcome.status === "completed") {
       return decryptAppPairingToken(
@@ -443,13 +435,7 @@ const PAIRING_API_URLS: Record<Environment, string> = {
   prod: "https://auth.beeai-services.com",
   staging: "https://public-api.korshaks.people.amazon.dev",
 };
-
-const PAIRING_PATHS = [
-  "/apps/pairing/request",
-  "/v1/apps/pairing/request",
-  "/auth/apps/pairing/request",
-  "/v1/auth/apps/pairing/request",
-];
+const PAIRING_PATH = "/apps/pairing/request";
 
 function getPairingApiCandidates(env: Environment): string[] {
   const override = process.env["BEE_PAIRING_API_URL"]?.trim();
@@ -460,14 +446,6 @@ function getPairingApiCandidates(env: Environment): string[] {
   return [normalizeBaseUrl(PAIRING_API_URLS[env])];
 }
 
-function getPairingPathCandidates(): string[] {
-  const override = process.env["BEE_PAIRING_API_PATH"]?.trim();
-  if (override) {
-    return [override.startsWith("/") ? override : `/${override}`];
-  }
-  return PAIRING_PATHS;
-}
-
 function normalizeBaseUrl(url: string): string {
   return url.endsWith("/") ? url : `${url}/`;
 }
@@ -475,10 +453,9 @@ function normalizeBaseUrl(url: string): string {
 async function fetchPairing(
   _env: Environment,
   baseUrl: string,
-  path: string,
   init: RequestInit
 ): Promise<Response> {
-  const url = new URL(path, baseUrl);
+  const url = new URL(PAIRING_PATH, baseUrl);
   return fetch(url, init);
 }
 
