@@ -310,7 +310,7 @@ async function loginWithAppPairing(
     throw new Error("Pairing request expired. Please try again.");
   }
 
-  const pairingUrl = buildPairingUrl(context, initial.requestId, options);
+  const pairingUrl = buildPairingUrl(initial.requestId, options);
   const method = await selectAuthMethod();
 
   await presentAppPairing(method, pairingUrl, initial.requestId);
@@ -461,17 +461,12 @@ async function pollForAppToken(
   throw new Error("Login timed out. Please try again.");
 }
 
-function buildPairingUrl(
-  context: CommandContext,
-  requestId: string,
-  options: LoginOptions
-): string {
+function buildPairingUrl(requestId: string, options: LoginOptions): string {
   if (options.pairingUrl) {
     return applyPairingUrlTemplate(options.pairingUrl, requestId);
   }
 
-  const config = getEnvironmentConfig(context.env);
-  return new URL(`/apps/pairing/request/${requestId}`, config.apiUrl).toString();
+  return `https://bee.computer.connect/${requestId}`;
 }
 
 function applyPairingUrlTemplate(base: string, requestId: string): string {
