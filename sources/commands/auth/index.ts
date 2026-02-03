@@ -1,7 +1,8 @@
-import { select } from "@inquirer/prompts";
+import { input, select } from "@inquirer/prompts";
 import type { Command, CommandContext } from "@/commands/types";
 import { getEnvironmentConfig } from "@/environment";
 import { clearToken, loadToken, saveToken } from "@/secureStore";
+import { decryptRsaOaepBase64, generateRsaKeyPair } from "@/utils/rsa";
 import { openBrowser } from "@/utils/browser";
 import { renderQrCode } from "@/utils/qrCode";
 
@@ -9,6 +10,8 @@ type LoginOptions = {
   token?: string;
   tokenStdin: boolean;
   skipVerify: boolean;
+  appId?: string;
+  pairingUrl?: string;
 };
 
 type StatusOptions = {
@@ -21,23 +24,15 @@ type DevUser = {
   last_name: string | null;
 };
 
-type DeviceAuthStart = {
-  device_code: string;
-  user_code: string;
-  verification_url: string;
-  verification_uri_complete: string | null;
-  expires_in: number;
-  interval: number;
-};
-
-type DeviceAuthPollOutcome =
-  | { status: "success"; token: string }
-  | { status: "pending"; retryInMs?: number };
-
 type DeviceAuthMethod = "browser" | "qr";
 
+type AppPairingRequest =
+  | { status: "pending"; requestId: string; expiresAt: string }
+  | { status: "completed"; requestId: string; encryptedToken: string }
+  | { status: "expired"; requestId: string };
+
 const USAGE = [
-  "bee [--staging] auth login [--skip-verify]",
+  "bee [--staging] auth login [--app-id <appId>] [--pairing-url <url>] [--skip-verify]",
   "bee [--staging] auth login --token <token> [--skip-verify]",
   "bee [--staging] auth login --token-stdin [--skip-verify]",
   "bee [--staging] auth status [--no-verify]",
@@ -93,7 +88,7 @@ async function handleLogin(
   }
 
   if (!token) {
-    token = await loginWithDeviceFlow(context);
+    token = await loginWithAppPairing(context, options);
   }
 
   if (!token) {
@@ -159,6 +154,8 @@ function parseLoginArgs(args: readonly string[]): LoginOptions {
   let token: string | undefined;
   let tokenStdin = false;
   let skipVerify = false;
+  let appId: string | undefined;
+  let pairingUrl: string | undefined;
   const positionals: string[] = [];
 
   for (let i = 0; i < args.length; i += 1) {
@@ -182,6 +179,26 @@ function parseLoginArgs(args: readonly string[]): LoginOptions {
       continue;
     }
 
+    if (arg === "--app-id") {
+      const value = args[i + 1];
+      if (value === undefined) {
+        throw new Error("--app-id requires a value");
+      }
+      appId = value;
+      i += 1;
+      continue;
+    }
+
+    if (arg === "--pairing-url") {
+      const value = args[i + 1];
+      if (value === undefined) {
+        throw new Error("--pairing-url requires a value");
+      }
+      pairingUrl = value;
+      i += 1;
+      continue;
+    }
+
     if (arg === "--skip-verify") {
       skipVerify = true;
       continue;
@@ -201,6 +218,12 @@ function parseLoginArgs(args: readonly string[]): LoginOptions {
   const options: LoginOptions = { tokenStdin, skipVerify };
   if (token !== undefined) {
     options.token = token;
+  }
+  if (appId !== undefined) {
+    options.appId = appId;
+  }
+  if (pairingUrl !== undefined) {
+    options.pairingUrl = pairingUrl;
   }
   return options;
 }
@@ -262,37 +285,56 @@ function maskToken(token: string): string {
   return `${trimmed.slice(0, 4)}...${trimmed.slice(-4)}`;
 }
 
-async function loginWithDeviceFlow(context: CommandContext): Promise<string> {
+async function loginWithAppPairing(
+  context: CommandContext,
+  options: LoginOptions
+): Promise<string> {
   if (!process.stdin.isTTY) {
     throw new Error(
       "Interactive login requires a TTY. Use --token or --token-stdin."
     );
   }
 
-  const deviceAuth = await startDeviceAuth(context);
-  const verificationUrl = resolveVerificationUrl(deviceAuth);
+  const appId = await resolveAppId(options.appId);
+  const keyPair = generateRsaKeyPair();
+  const publicKey = keyPair.publicKeyPem.trim();
+  const privateKey = keyPair.privateKeyPem.trim();
+
+  const initial = await requestAppPairing(context, appId, publicKey);
+
+  if (initial.status === "completed") {
+    return decryptAppToken(initial.encryptedToken, privateKey);
+  }
+
+  if (initial.status === "expired") {
+    throw new Error("Pairing request expired. Please try again.");
+  }
+
+  const pairingUrl = buildPairingUrl(context, initial.requestId, options);
   const method = await selectAuthMethod();
 
-  await presentDeviceAuth(method, verificationUrl, deviceAuth.user_code);
+  await presentAppPairing(method, pairingUrl, initial.requestId);
   console.log("Waiting for authorization...");
 
-  return await pollForDeviceToken(context, deviceAuth);
+  return await pollForAppToken(context, {
+    appId,
+    publicKey,
+    privateKey,
+    expiresAt: initial.expiresAt,
+  });
 }
 
-function resolveVerificationUrl(deviceAuth: DeviceAuthStart): string {
-  if (deviceAuth.verification_uri_complete) {
-    return deviceAuth.verification_uri_complete;
+async function resolveAppId(appId?: string): Promise<string> {
+  if (appId && appId.trim()) {
+    return appId.trim();
   }
 
-  try {
-    const url = new URL(deviceAuth.verification_url);
-    if (!url.searchParams.has("code")) {
-      url.searchParams.set("code", deviceAuth.user_code);
-    }
-    return url.toString();
-  } catch {
-    return deviceAuth.verification_url;
-  }
+  const response = await input({
+    message: "Enter the app ID to pair:",
+    validate: (value) => (value.trim().length > 0 ? true : "App ID is required"),
+  });
+
+  return response.trim();
 }
 
 async function selectAuthMethod(): Promise<DeviceAuthMethod> {
@@ -305,31 +347,37 @@ async function selectAuthMethod(): Promise<DeviceAuthMethod> {
   });
 }
 
-async function presentDeviceAuth(
+async function presentAppPairing(
   method: DeviceAuthMethod,
-  verificationUrl: string,
-  userCode: string
+  pairingUrl: string,
+  requestId: string
 ): Promise<void> {
-  console.log(`Open this URL to continue: ${verificationUrl}`);
-  console.log(`Use code: ${userCode}`);
+  console.log(`Pairing request: ${requestId}`);
+  console.log(`Open this URL to approve the app: ${pairingUrl}`);
 
   if (method === "browser") {
-    const opened = await openBrowser(verificationUrl);
+    const opened = await openBrowser(pairingUrl);
     if (!opened) {
       console.log("Unable to open the browser automatically.");
     }
     return;
   }
 
-  const qrCode = await renderQrCode(verificationUrl);
+  const qrCode = await renderQrCode(pairingUrl);
   console.log(qrCode);
 }
 
-async function startDeviceAuth(
-  context: CommandContext
-): Promise<DeviceAuthStart> {
-  const response = await context.client.fetch("/v1/auth/device/start", {
+async function requestAppPairing(
+  context: CommandContext,
+  appId: string,
+  publicKey: string
+): Promise<AppPairingRequest> {
+  const response = await context.client.fetch("/apps/pairing/request", {
     method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ app_id: appId, publicKey }),
   });
 
   if (!response.ok) {
@@ -342,124 +390,112 @@ async function startDeviceAuth(
   }
 
   const data = await safeJson(response);
-  const deviceCode = data?.["device_code"];
-  const userCode = data?.["user_code"];
-  const verificationUrl =
-    typeof data?.["verification_url"] === "string"
-      ? data["verification_url"]
-      : data?.["verification_uri"];
-  const verificationUriComplete = data?.["verification_uri_complete"];
-  const expiresIn = data?.["expires_in"];
-  const interval = data?.["interval"];
-
-  if (
-    typeof deviceCode !== "string" ||
-    typeof userCode !== "string" ||
-    typeof verificationUrl !== "string" ||
-    typeof expiresIn !== "number"
-  ) {
+  if (data?.["ok"] !== true) {
     throw new Error("Invalid response from developer API.");
   }
 
-  return {
-    device_code: deviceCode,
-    user_code: userCode,
-    verification_url: verificationUrl,
-    verification_uri_complete:
-      typeof verificationUriComplete === "string"
-        ? verificationUriComplete
-        : null,
-    expires_in: expiresIn,
-    interval: typeof interval === "number" && interval > 0 ? interval : 5,
-  };
+  const status = data?.["status"];
+  const requestId = data?.["requestId"];
+
+  if (status === "pending") {
+    const expiresAt = data?.["expiresAt"];
+    if (typeof requestId !== "string" || typeof expiresAt !== "string") {
+      throw new Error("Invalid response from developer API.");
+    }
+    return { status: "pending", requestId, expiresAt };
+  }
+
+  if (status === "completed") {
+    const result = data?.["result"];
+    const encryptedToken =
+      result && typeof result === "object"
+        ? (result as Record<string, unknown>)["encryptedToken"]
+        : null;
+    if (typeof requestId !== "string" || typeof encryptedToken !== "string") {
+      throw new Error("Invalid response from developer API.");
+    }
+    return { status: "completed", requestId, encryptedToken };
+  }
+
+  if (status === "expired") {
+    if (typeof requestId !== "string") {
+      throw new Error("Invalid response from developer API.");
+    }
+    return { status: "expired", requestId };
+  }
+
+  throw new Error("Invalid response from developer API.");
 }
 
-async function pollForDeviceToken(
+async function pollForAppToken(
   context: CommandContext,
-  deviceAuth: DeviceAuthStart
+  opts: {
+    appId: string;
+    publicKey: string;
+    privateKey: string;
+    expiresAt: string;
+  }
 ): Promise<string> {
-  const expiresAt = Date.now() + deviceAuth.expires_in * 1000;
-  let intervalMs = deviceAuth.interval * 1000;
+  const expiresAtMs = Date.parse(opts.expiresAt);
+  const deadline =
+    Number.isNaN(expiresAtMs) || expiresAtMs <= 0
+      ? Date.now() + 5 * 60 * 1000
+      : expiresAtMs;
+  const intervalMs = 2000;
 
-  while (Date.now() < expiresAt) {
-    const outcome = await fetchDeviceToken(context, deviceAuth.device_code);
-    if (outcome.status === "success") {
-      return outcome.token;
+  while (Date.now() < deadline) {
+    const outcome = await requestAppPairing(
+      context,
+      opts.appId,
+      opts.publicKey
+    );
+    if (outcome.status === "completed") {
+      return decryptAppToken(outcome.encryptedToken, opts.privateKey);
     }
-
-    if (typeof outcome.retryInMs === "number" && outcome.retryInMs > 0) {
-      intervalMs = outcome.retryInMs;
+    if (outcome.status === "expired") {
+      throw new Error("Pairing request expired. Please try again.");
     }
-
     await sleep(intervalMs);
   }
 
   throw new Error("Login timed out. Please try again.");
 }
 
-async function fetchDeviceToken(
+function buildPairingUrl(
   context: CommandContext,
-  deviceCode: string
-): Promise<DeviceAuthPollOutcome> {
-  const response = await context.client.fetch("/v1/auth/device/token", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ device_code: deviceCode }),
-  });
-
-  if (response.ok) {
-    const data = await safeJson(response);
-    const token =
-      typeof data?.["token"] === "string"
-        ? data["token"]
-        : typeof data?.["access_token"] === "string"
-          ? data["access_token"]
-          : null;
-    if (!token) {
-      throw new Error("Invalid response from developer API.");
-    }
-    return { status: "success", token };
+  requestId: string,
+  options: LoginOptions
+): string {
+  if (options.pairingUrl) {
+    return applyPairingUrlTemplate(options.pairingUrl, requestId);
   }
 
-  if (response.status === 202) {
-    return { status: "pending" };
+  const config = getEnvironmentConfig(context.env);
+  return new URL(`/apps/pairing/request/${requestId}`, config.apiUrl).toString();
+}
+
+function applyPairingUrlTemplate(base: string, requestId: string): string {
+  const trimmed = base.trim();
+  if (trimmed.includes("{requestId}")) {
+    return trimmed.replace("{requestId}", requestId);
   }
 
-  const errorPayload = await safeJson(response);
-  const errorCode =
-    typeof errorPayload?.["error"] === "string" ? errorPayload["error"] : null;
-
-  if (errorCode === "authorization_pending") {
-    return { status: "pending" };
+  try {
+    const url = new URL(trimmed);
+    url.searchParams.set("requestId", requestId);
+    return url.toString();
+  } catch {
+    const separator = trimmed.includes("?") ? "&" : "?";
+    return `${trimmed}${separator}requestId=${encodeURIComponent(requestId)}`;
   }
+}
 
-  if (errorCode === "slow_down") {
-    const retryIn = errorPayload?.["interval"];
-    const retryInMs =
-      typeof retryIn === "number" && retryIn > 0 ? retryIn * 1000 : undefined;
-    if (retryInMs !== undefined) {
-      return { status: "pending", retryInMs };
-    }
-    return { status: "pending" };
+function decryptAppToken(encryptedToken: string, privateKey: string): string {
+  const token = decryptRsaOaepBase64(encryptedToken, privateKey).trim();
+  if (!token) {
+    throw new Error("Invalid response from developer API.");
   }
-
-  if (errorCode === "expired_token") {
-    throw new Error("Login expired. Please run the command again.");
-  }
-
-  if (errorCode === "access_denied") {
-    throw new Error("Login was canceled.");
-  }
-
-  const errorMessage =
-    typeof errorPayload?.["error_description"] === "string"
-      ? errorPayload["error_description"]
-      : typeof errorPayload?.["error"] === "string"
-        ? errorPayload["error"]
-        : `Request failed with status ${response.status}`;
-  throw new Error(errorMessage);
+  return token;
 }
 
 async function sleep(durationMs: number): Promise<void> {
