@@ -9,6 +9,7 @@ const USAGE =
 const DEFAULT_OUTPUT_DIR = "bee-sync";
 const DEFAULT_RECENT_DAYS = 3;
 const PAGE_SIZE = 100;
+const CONVERSATION_CONCURRENCY = 4;
 
 type Fact = {
   id: number;
@@ -113,16 +114,65 @@ export const syncCommand: Command = {
   },
 };
 
-class ProgressBar {
+class MultiProgress {
+  private readonly tasks: ProgressTask[] = [];
+  private rendered = false;
+  private readonly enabled = process.stdout.isTTY;
+
+  addTask(label: string): ProgressTask {
+    const task = new ProgressTask(this, label);
+    this.tasks.push(task);
+    return task;
+  }
+
+  finish(): void {
+    if (this.enabled && this.rendered) {
+      process.stdout.write("\n");
+    }
+  }
+
+  render(): void {
+    if (!this.enabled) {
+      return;
+    }
+
+    const lines = this.tasks.map((task) => task.renderLine());
+    if (!this.rendered) {
+      process.stdout.write(lines.join("\n"));
+      this.rendered = true;
+      return;
+    }
+
+    process.stdout.write(`\x1b[${lines.length}A`);
+    for (const line of lines) {
+      process.stdout.write("\r\x1b[2K");
+      process.stdout.write(line);
+      process.stdout.write("\n");
+    }
+  }
+}
+
+class ProgressTask {
   private current = 0;
   private total = 0;
-  private label = "";
-  private readonly width = 28;
-  private readonly enabled = process.stdout.isTTY;
+  private label: string;
+  private readonly width = 24;
+
+  constructor(private readonly progress: MultiProgress, label: string) {
+    this.label = label;
+  }
 
   setLabel(label: string): void {
     this.label = label;
-    this.render();
+    this.progress.render();
+  }
+
+  setTotal(total: number): void {
+    this.total = Math.max(total, 0);
+    if (this.current > this.total) {
+      this.current = this.total;
+    }
+    this.progress.render();
   }
 
   addTotal(amount: number): void {
@@ -130,7 +180,7 @@ class ProgressBar {
       return;
     }
     this.total += amount;
-    this.render();
+    this.progress.render();
   }
 
   advance(amount = 1): void {
@@ -141,29 +191,25 @@ class ProgressBar {
     if (this.current > this.total) {
       this.total = this.current;
     }
-    this.render();
+    this.progress.render();
   }
 
-  finish(): void {
-    if (this.enabled) {
-      process.stdout.write("\n");
-    }
+  reset(): void {
+    this.current = 0;
+    this.total = 0;
+    this.progress.render();
   }
 
-  private render(): void {
-    if (!this.enabled) {
-      return;
-    }
+  renderLine(): string {
     const total = this.total > 0 ? this.total : 1;
     const ratio = Math.min(this.current / total, 1);
     const filled = Math.round(ratio * this.width);
     const empty = Math.max(this.width - filled, 0);
     const bar = `${"#".repeat(filled)}${"-".repeat(empty)}`;
     const percent = Math.round(ratio * 100);
-    const label = this.label ? ` ${this.label}` : "";
-    process.stdout.write("\r\x1b[2K");
-    const text = `[${bar}] ${this.current}/${this.total} ${percent}%${label}`;
-    process.stdout.write(text);
+    const label = this.label ? `${this.label}` : "";
+    const counts = `${this.current}/${this.total}`;
+    return `${label.padEnd(16)} [${bar}] ${counts} ${percent}%`;
   }
 }
 
@@ -220,15 +266,22 @@ async function syncAll(
   context: CommandContext,
   options: SyncOptions
 ): Promise<void> {
-  const progress = new ProgressBar();
+  const progress = new MultiProgress();
+  const factsTask = progress.addTask("facts");
+  const todosTask = progress.addTask("todos");
+  const dailyListTask = progress.addTask("daily list");
+  const dailySyncTask = progress.addTask("daily sync");
+  const conversationTask = progress.addTask("conversations");
   await mkdir(options.outputDir, { recursive: true });
 
-  progress.setLabel("facts");
-  const facts = await fetchAllFacts(context, progress);
-  progress.setLabel("todos");
-  const todos = await fetchAllTodos(context, progress);
-  progress.setLabel("daily list");
-  const dailySummaries = await fetchAllDailySummaries(context, progress);
+  const [facts, todos, dailySummaries] = await Promise.all([
+    fetchAllFacts(context, factsTask),
+    fetchAllTodos(context, todosTask),
+    fetchAllDailySummaries(context, dailyListTask),
+  ]);
+  factsTask.setLabel("facts done");
+  todosTask.setLabel("todos done");
+  dailyListTask.setLabel("daily list done");
 
   await writeFactsMarkdown(options.outputDir, facts);
   await writeTodosMarkdown(options.outputDir, todos);
@@ -240,18 +293,33 @@ async function syncAll(
   const recent = [...sortedDaily]
     .sort((a, b) => dailySortKey(b) - dailySortKey(a))
     .slice(0, options.recentDays);
-  progress.addTotal(sortedDaily.length + recent.length);
+  dailySyncTask.setTotal(sortedDaily.length + recent.length);
+  conversationTask.reset();
   for (const summary of sortedDaily) {
-    progress.setLabel(`daily ${resolveDailyFolderName(summary)}`);
-    await syncDailySummary(context, options.outputDir, summary.id, progress);
+    dailySyncTask.setLabel(`daily ${resolveDailyFolderName(summary)}`);
+    await syncDailySummary(
+      context,
+      options.outputDir,
+      summary.id,
+      dailySyncTask,
+      conversationTask
+    );
   }
 
   if (recent.length > 0) {
     for (const summary of recent) {
-      progress.setLabel(`recent ${resolveDailyFolderName(summary)}`);
-      await syncDailySummary(context, options.outputDir, summary.id, progress);
+      dailySyncTask.setLabel(`recent ${resolveDailyFolderName(summary)}`);
+      await syncDailySummary(
+        context,
+        options.outputDir,
+        summary.id,
+        dailySyncTask,
+        conversationTask
+      );
     }
   }
+  dailySyncTask.setLabel("daily sync done");
+  conversationTask.setLabel("conversations done");
   progress.finish();
 }
 
@@ -267,11 +335,11 @@ function dailySortKey(summary: DailySummary): number {
 
 async function fetchAllFacts(
   context: CommandContext,
-  progress: ProgressBar
+  task: ProgressTask
 ): Promise<Fact[]> {
   const items: Fact[] = [];
   let cursor: string | undefined;
-  progress.addTotal(1);
+  task.addTotal(1);
 
   while (true) {
     const params = new URLSearchParams();
@@ -283,11 +351,11 @@ async function fetchAllFacts(
     const data = await requestDeveloperJson(context, path, { method: "GET" });
     const payload = parseFactsList(data);
     items.push(...payload.facts);
-    progress.advance(1);
+    task.advance(1);
     if (!payload.next_cursor) {
       break;
     }
-    progress.addTotal(1);
+    task.addTotal(1);
     cursor = payload.next_cursor;
   }
 
@@ -296,11 +364,11 @@ async function fetchAllFacts(
 
 async function fetchAllTodos(
   context: CommandContext,
-  progress: ProgressBar
+  task: ProgressTask
 ): Promise<Todo[]> {
   const items: Todo[] = [];
   let cursor: string | undefined;
-  progress.addTotal(1);
+  task.addTotal(1);
 
   while (true) {
     const params = new URLSearchParams();
@@ -312,11 +380,11 @@ async function fetchAllTodos(
     const data = await requestDeveloperJson(context, path, { method: "GET" });
     const payload = parseTodosList(data);
     items.push(...payload.todos);
-    progress.advance(1);
+    task.advance(1);
     if (!payload.next_cursor) {
       break;
     }
-    progress.addTotal(1);
+    task.addTotal(1);
     cursor = payload.next_cursor;
   }
 
@@ -325,16 +393,16 @@ async function fetchAllTodos(
 
 async function fetchAllDailySummaries(
   context: CommandContext,
-  progress: ProgressBar
+  task: ProgressTask
 ): Promise<DailySummary[]> {
   const items: DailySummary[] = [];
-  progress.addTotal(1);
+  task.addTotal(1);
   const data = await requestDeveloperJson(context, "/v1/daily?limit=100", {
     method: "GET",
   });
   const payload = parseDailyList(data);
   items.push(...payload.daily_summaries);
-  progress.advance(1);
+  task.advance(1);
   return items;
 }
 
@@ -342,7 +410,8 @@ async function syncDailySummary(
   context: CommandContext,
   outputDir: string,
   dailyId: number,
-  progress: ProgressBar
+  dailyTask: ProgressTask,
+  conversationTask: ProgressTask
 ): Promise<void> {
   const data = await requestDeveloperJson(context, `/v1/daily/${dailyId}`, {
     method: "GET",
@@ -350,7 +419,10 @@ async function syncDailySummary(
   const payload = parseDailyDetail(data);
   const daily = payload.daily_summary;
   const conversationCount = daily.conversations?.length ?? 0;
-  progress.addTotal(conversationCount);
+  if (conversationCount > 0) {
+    conversationTask.addTotal(conversationCount);
+    conversationTask.setLabel(`conversations ${resolveDailyFolderName(daily)}`);
+  }
 
   const folderName = resolveDailyFolderName(daily);
   const dailyDir = path.join(outputDir, "daily", folderName);
@@ -361,19 +433,22 @@ async function syncDailySummary(
   await writeFile(path.join(dailyDir, "summary.md"), summaryMarkdown, "utf8");
 
   if (daily.conversations && daily.conversations.length > 0) {
-    progress.setLabel("conversations");
-    for (const conversation of daily.conversations) {
-      const detail = await fetchConversation(context, conversation.id);
-      const markdown = formatConversationMarkdown(detail);
-      await writeFile(
-        path.join(conversationsDir, `${conversation.id}.md`),
-        markdown,
-        "utf8"
-      );
-      progress.advance(1);
-    }
+    await runWithConcurrency(
+      daily.conversations,
+      CONVERSATION_CONCURRENCY,
+      async (conversation) => {
+        const detail = await fetchConversation(context, conversation.id);
+        const markdown = formatConversationMarkdown(detail);
+        await writeFile(
+          path.join(conversationsDir, `${conversation.id}.md`),
+          markdown,
+          "utf8"
+        );
+        conversationTask.advance(1);
+      }
+    );
   }
-  progress.advance(1);
+  dailyTask.advance(1);
 }
 
 async function fetchConversation(
@@ -681,4 +756,30 @@ function parseConversationDetail(
     throw new Error("Invalid conversation response.");
   }
   return { conversation: data.conversation };
+}
+
+async function runWithConcurrency<T>(
+  items: readonly T[],
+  limit: number,
+  worker: (item: T) => Promise<void>
+): Promise<void> {
+  if (items.length === 0) {
+    return;
+  }
+
+  const concurrency = Math.max(1, Math.min(limit, items.length));
+  let index = 0;
+
+  const runners = Array.from({ length: concurrency }, async () => {
+    while (true) {
+      const current = index;
+      index += 1;
+      if (current >= items.length) {
+        break;
+      }
+      await worker(items[current] as T);
+    }
+  });
+
+  await Promise.all(runners);
 }
