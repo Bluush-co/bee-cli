@@ -10,6 +10,8 @@ const DEFAULT_OUTPUT_DIR = "bee-sync";
 const DEFAULT_RECENT_DAYS = 3;
 const PAGE_SIZE = 100;
 const CONVERSATION_CONCURRENCY = 4;
+const FALLBACK_TIMEZONE = "America/Los_Angeles";
+const DEFAULT_TIMEZONE = resolveDefaultTimezone();
 
 type Fact = {
   id: number;
@@ -31,6 +33,7 @@ type DailySummary = {
   id: number;
   date: string | null;
   date_time: number | null;
+  timezone?: string | null;
   short_summary: string;
   summary: string | null;
   email_summary: string | null;
@@ -67,6 +70,7 @@ type ConversationDetail = {
   id: number;
   start_time: number;
   end_time: number | null;
+  timezone?: string | null;
   device_type: string;
   summary: string | null;
   short_summary: string | null;
@@ -103,6 +107,7 @@ type ConversationSummary = {
   id: number;
   start_time: number;
   created_at: number;
+  timezone?: string | null;
 };
 
 type SyncTarget = "facts" | "todos" | "daily" | "conversations";
@@ -435,13 +440,16 @@ async function syncAll(
     );
     conversationTask.setTotal(sortedConversations.length);
 
-    const conversationsDir = path.join(options.outputDir, "conversations");
-    await mkdir(conversationsDir, { recursive: true });
+    const conversationsRoot = path.join(options.outputDir, "conversations");
+    await mkdir(conversationsRoot, { recursive: true });
     await runWithConcurrency(
       sortedConversations,
       CONVERSATION_CONCURRENCY,
       async (conversation) => {
         const detail = await fetchConversation(context, conversation.id);
+        const dateFolder = resolveConversationFolderName(detail);
+        const conversationsDir = path.join(conversationsRoot, dateFolder);
+        await mkdir(conversationsDir, { recursive: true });
         const markdown = formatConversationMarkdown(detail);
         await writeFile(
           path.join(conversationsDir, `${conversation.id}.md`),
@@ -647,13 +655,15 @@ async function fetchConversation(
 }
 
 function resolveDailyFolderName(summary: DailySummary): string {
-  if (summary.date) {
-    return summary.date;
-  }
-  if (summary.date_time !== null) {
-    return formatDate(summary.date_time);
-  }
-  return `unknown-${summary.id}`;
+  const timestamp = summary.date_time ?? summary.created_at ?? 0;
+  const timeZone = resolveTimezone(summary.timezone);
+  return formatDateInTimeZone(timestamp, timeZone);
+}
+
+function resolveConversationFolderName(conversation: ConversationDetail): string {
+  const timestamp = conversation.start_time ?? conversation.created_at ?? 0;
+  const timeZone = resolveTimezone(conversation.timezone);
+  return formatDateInTimeZone(timestamp, timeZone);
 }
 
 async function writeFactsMarkdown(
@@ -715,7 +725,7 @@ function formatTodoList(todos: Todo[]): string[] {
 
 function formatDailySummaryMarkdown(summary: DailySummaryDetail): string {
   const lines: string[] = [];
-  const title = summary.date ?? (summary.date_time ? formatDate(summary.date_time) : "Unknown Date");
+  const title = resolveDailyFolderName(summary);
   lines.push(`# Daily Summary — ${title}`, "");
   lines.push(`- id: ${summary.id}`);
   lines.push(
@@ -867,8 +877,47 @@ function formatDateTime(epochMs: number): string {
   return new Date(epochMs).toISOString();
 }
 
-function formatDate(epochMs: number): string {
-  return new Date(epochMs).toISOString().slice(0, 10);
+function formatDateInTimeZone(epochMs: number, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(epochMs));
+  const lookup: Record<string, string> = {};
+  for (const part of parts) {
+    if (part.type !== "literal") {
+      lookup[part.type] = part.value;
+    }
+  }
+  return `${lookup["year"]}-${lookup["month"]}-${lookup["day"]}`;
+}
+
+function resolveTimezone(candidate?: string | null): string {
+  if (isValidTimeZone(candidate)) {
+    return candidate;
+  }
+  return DEFAULT_TIMEZONE;
+}
+
+function resolveDefaultTimezone(): string {
+  const systemTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (isValidTimeZone(systemTz)) {
+    return systemTz;
+  }
+  return FALLBACK_TIMEZONE;
+}
+
+function isValidTimeZone(timeZone?: string | null): timeZone is string {
+  if (!timeZone) {
+    return false;
+  }
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone }).format();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function parseFactsList(payload: unknown): { facts: Fact[]; next_cursor: string | null } {
