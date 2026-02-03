@@ -2,6 +2,7 @@ import { select } from "@inquirer/prompts";
 import type { Command, CommandContext } from "@/commands/types";
 import { getEnvironmentConfig, type Environment } from "@/environment";
 import { clearToken, loadToken, saveToken } from "@/secureStore";
+import { requestAppPairing } from "./appPairingRequest";
 import {
   decryptAppPairingToken,
   generateAppPairingKeyPair,
@@ -21,11 +22,6 @@ type DevUser = {
 };
 
 type DeviceAuthMethod = "browser" | "qr";
-
-type AppPairingRequest =
-  | { status: "pending"; requestId: string; expiresAt: string }
-  | { status: "completed"; requestId: string; encryptedToken: string }
-  | { status: "expired"; requestId: string };
 
 const USAGE = [
   "bee [--staging] auth login",
@@ -230,11 +226,7 @@ async function loginWithAppPairing(context: CommandContext): Promise<string> {
   const publicKey = keyPair.publicKeyBase64;
   const secretKey = keyPair.secretKey;
 
-  const { result: initial, baseUrl } = await requestAppPairing(
-    context,
-    appId,
-    publicKey
-  );
+  const initial = await requestAppPairing(context.env, appId, publicKey);
 
   if (initial.status === "completed") {
     return decryptAppPairingToken(initial.encryptedToken, secretKey);
@@ -250,12 +242,12 @@ async function loginWithAppPairing(context: CommandContext): Promise<string> {
   await presentAppPairing(method, pairingUrl, initial.requestId);
   console.log("Waiting for authorization...");
 
-  return await pollForAppToken(context, {
+  return await pollForAppToken({
+    env: context.env,
     appId,
     publicKey,
     secretKey,
     expiresAt: initial.expiresAt,
-    baseUrl,
   });
 }
 
@@ -289,115 +281,13 @@ async function presentAppPairing(
   console.log(qrCode);
 }
 
-async function requestAppPairing(
-  context: CommandContext,
-  appId: string,
-  publicKey: string
-): Promise<{ result: AppPairingRequest; baseUrl: string }> {
-  const candidates = getPairingApiCandidates(context.env);
-  let lastError: Error | null = null;
-
-  for (const baseUrl of candidates) {
-    try {
-      const result = await requestAppPairingWithBase(
-        context,
-        appId,
-        publicKey,
-        baseUrl
-      );
-      return { result, baseUrl };
-    } catch (error) {
-      if (error instanceof PairingEndpointNotFoundError) {
-        lastError = error;
-        continue;
-      }
-      throw error;
-    }
-  }
-
-  if (lastError) {
-    throw lastError;
-  }
-  throw new Error("Pairing endpoint not found.");
-}
-
-async function requestAppPairingWithBase(
-  context: CommandContext,
-  appId: string,
-  publicKey: string,
-  baseUrl: string
-): Promise<AppPairingRequest> {
-  const response = await fetchPairing(context.env, baseUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ app_id: appId, publicKey }),
-  });
-
-  if (!response.ok) {
-    const errorPayload = await safeJson(response);
-    const errorCode =
-      typeof errorPayload?.["error"] === "string" ? errorPayload["error"] : null;
-    if (
-      response.status === 404 &&
-      (!errorCode || errorCode === "Not Found")
-    ) {
-      throw new PairingEndpointNotFoundError();
-    }
-
-    const message = errorCode ?? `Request failed with status ${response.status}`;
-    throw new Error(message);
-  }
-
-  const data = await safeJson(response);
-  if (data?.["ok"] !== true) {
-    throw new Error("Invalid response from developer API.");
-  }
-
-  const status = data?.["status"];
-  const requestId = data?.["requestId"];
-
-  if (status === "pending") {
-    const expiresAt = data?.["expiresAt"];
-    if (typeof requestId !== "string" || typeof expiresAt !== "string") {
-      throw new Error("Invalid response from developer API.");
-    }
-    return { status: "pending", requestId, expiresAt };
-  }
-
-  if (status === "completed") {
-    const result = data?.["result"];
-    const encryptedToken =
-      result && typeof result === "object"
-        ? (result as Record<string, unknown>)["encryptedToken"]
-        : null;
-    if (typeof requestId !== "string" || typeof encryptedToken !== "string") {
-      throw new Error("Invalid response from developer API.");
-    }
-    return { status: "completed", requestId, encryptedToken };
-  }
-
-  if (status === "expired") {
-    if (typeof requestId !== "string") {
-      throw new Error("Invalid response from developer API.");
-    }
-    return { status: "expired", requestId };
-  }
-
-  throw new Error("Invalid response from developer API.");
-}
-
-async function pollForAppToken(
-  context: CommandContext,
-  opts: {
-    appId: string;
-    publicKey: string;
-    secretKey: Uint8Array;
-    expiresAt: string;
-    baseUrl: string;
-  }
-): Promise<string> {
+async function pollForAppToken(opts: {
+  env: Environment;
+  appId: string;
+  publicKey: string;
+  secretKey: Uint8Array;
+  expiresAt: string;
+}): Promise<string> {
   const expiresAtMs = Date.parse(opts.expiresAt);
   const deadline =
     Number.isNaN(expiresAtMs) || expiresAtMs <= 0
@@ -406,11 +296,10 @@ async function pollForAppToken(
   const intervalMs = 2000;
 
   while (Date.now() < deadline) {
-    const outcome = await requestAppPairingWithBase(
-      context,
+    const outcome = await requestAppPairing(
+      opts.env,
       opts.appId,
-      opts.publicKey,
-      opts.baseUrl,
+      opts.publicKey
     );
     if (outcome.status === "completed") {
       return decryptAppPairingToken(
@@ -429,40 +318,6 @@ async function pollForAppToken(
 
 function buildPairingUrl(requestId: string): string {
   return `https://bee.computer.connect/${requestId}`;
-}
-
-const PAIRING_API_URLS: Record<Environment, string> = {
-  prod: "https://auth.beeai-services.com",
-  staging: "https://public-api.korshaks.people.amazon.dev",
-};
-const PAIRING_PATH = "/apps/pairing/request";
-
-function getPairingApiCandidates(env: Environment): string[] {
-  const override = process.env["BEE_PAIRING_API_URL"]?.trim();
-  if (override) {
-    return [normalizeBaseUrl(override)];
-  }
-
-  return [normalizeBaseUrl(PAIRING_API_URLS[env])];
-}
-
-function normalizeBaseUrl(url: string): string {
-  return url.endsWith("/") ? url : `${url}/`;
-}
-
-async function fetchPairing(
-  _env: Environment,
-  baseUrl: string,
-  init: RequestInit
-): Promise<Response> {
-  const url = new URL(PAIRING_PATH, baseUrl);
-  return fetch(url, init);
-}
-
-class PairingEndpointNotFoundError extends Error {
-  constructor() {
-    super("Pairing endpoint not found.");
-  }
 }
 
 function getDefaultAppId(env: Environment): string {
