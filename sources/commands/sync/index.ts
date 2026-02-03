@@ -127,8 +127,20 @@ class MultiProgress {
   private readonly tasks: ProgressTask[] = [];
   private rendered = false;
   private readonly enabled = process.stdout.isTTY;
-  private spinnerIndex = 0;
-  private readonly spinnerFrames = ["|", "/", "-", "\\"];
+  private readonly spinnerFrames = [
+    "⠋",
+    "⠙",
+    "⠹",
+    "⠸",
+    "⠼",
+    "⠴",
+    "⠦",
+    "⠧",
+    "⠇",
+    "⠏",
+  ];
+  private readonly spinnerIntervalMs = 80;
+  private readonly spinnerStart = Date.now();
 
   addTask(label: string): ProgressTask {
     const task = new ProgressTask(this, label);
@@ -147,9 +159,11 @@ class MultiProgress {
       return;
     }
 
+    const frameIndex = Math.floor(
+      (Date.now() - this.spinnerStart) / this.spinnerIntervalMs
+    );
     const spinner =
-      this.spinnerFrames[this.spinnerIndex % this.spinnerFrames.length] ?? "|";
-    this.spinnerIndex += 1;
+      this.spinnerFrames[frameIndex % this.spinnerFrames.length] ?? "⠋";
     const lines = this.tasks.map((task) => task.renderLine(spinner));
     if (!this.rendered) {
       process.stdout.write(lines.join("\n"));
