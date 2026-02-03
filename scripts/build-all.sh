@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENTRY="$ROOT_DIR/sources/main.ts"
 DIST_ROOT="$ROOT_DIR/dist/platforms"
+ARCHIVE_ROOT="$ROOT_DIR/dist"
 
 declare -a TARGETS=(
   "linux-x64:bun-linux-x64:bee"
@@ -21,6 +22,8 @@ build_target() {
   local out_dir="$DIST_ROOT/$name"
   mkdir -p "$out_dir"
   local outfile="$out_dir/$out_name"
+  local archive
+  local archive_ext
 
   local args=("build" "$ENTRY" "--compile" "--target=$bun_target" "--outfile" "$outfile")
   local env_key="${name^^}"
@@ -45,6 +48,17 @@ build_target() {
     return 1
   fi
   echo "$output"
+
+  if [[ "$name" == windows-* ]]; then
+    archive_ext="zip"
+    archive="$ARCHIVE_ROOT/$name.$archive_ext"
+    (cd "$out_dir" && zip -q -9 -j "$archive" "$out_name")
+  else
+    archive_ext="tar.gz"
+    archive="$ARCHIVE_ROOT/$name.$archive_ext"
+    tar -C "$out_dir" -czf "$archive" "$out_name"
+  fi
+  echo "Archived $archive"
 }
 
 for target in "${TARGETS[@]}"; do
