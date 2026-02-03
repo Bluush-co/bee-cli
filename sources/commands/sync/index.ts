@@ -401,9 +401,6 @@ async function syncAll(
   const dailySyncTask = options.targets.has("daily")
     ? progress.addTask("daily sync")
     : null;
-  const dailyConversationTask = options.targets.has("daily")
-    ? progress.addTask("daily conversations")
-    : null;
   const conversationListTask = options.targets.has("conversations")
     ? progress.addTask("conversation list")
     : null;
@@ -442,7 +439,7 @@ async function syncAll(
   }
 
   const dailySyncPromise =
-    options.targets.has("daily") && dailySyncTask && dailyConversationTask
+    options.targets.has("daily") && dailySyncTask
       ? (async () => {
           const sortedDaily = [...dailySummaries].sort((a, b) => {
             return dailySortKey(a) - dailySortKey(b);
@@ -452,15 +449,13 @@ async function syncAll(
             .sort((a, b) => dailySortKey(b) - dailySortKey(a))
             .slice(0, options.recentDays);
           dailySyncTask.setTotal(sortedDaily.length + recent.length);
-          dailyConversationTask.reset();
           for (const summary of sortedDaily) {
             dailySyncTask.setLabel(`daily ${resolveDailyFolderName(summary)}`);
             await syncDailySummary(
               context,
               options.outputDir,
               summary.id,
-              dailySyncTask,
-              dailyConversationTask
+              dailySyncTask
             );
           }
 
@@ -471,15 +466,12 @@ async function syncAll(
                 context,
                 options.outputDir,
                 summary.id,
-                dailySyncTask,
-                dailyConversationTask
+                dailySyncTask
               );
             }
           }
           dailySyncTask.setLabel("daily sync done");
           dailySyncTask.complete();
-          dailyConversationTask.setLabel("daily conversations done");
-          dailyConversationTask.complete();
         })()
       : Promise.resolve();
 
@@ -655,44 +647,20 @@ async function syncDailySummary(
   context: CommandContext,
   outputDir: string,
   dailyId: number,
-  dailyTask: ProgressTask,
-  conversationTask: ProgressTask
+  dailyTask: ProgressTask
 ): Promise<void> {
   const data = await requestClientJson(context, `/v1/daily/${dailyId}`, {
     method: "GET",
   });
   const payload = parseDailyDetail(data);
   const daily = payload.daily_summary;
-  const conversationCount = daily.conversations?.length ?? 0;
-  if (conversationCount > 0) {
-    conversationTask.addTotal(conversationCount);
-    conversationTask.setLabel(`conversations ${resolveDailyFolderName(daily)}`);
-  }
 
   const folderName = resolveDailyFolderName(daily);
   const dailyDir = path.join(outputDir, "daily", folderName);
-  const conversationsDir = path.join(dailyDir, "conversations");
-  await mkdir(conversationsDir, { recursive: true });
+  await mkdir(dailyDir, { recursive: true });
 
   const summaryMarkdown = formatDailySummaryMarkdown(daily);
   await writeFile(path.join(dailyDir, "summary.md"), summaryMarkdown, "utf8");
-
-  if (daily.conversations && daily.conversations.length > 0) {
-    await runWithConcurrency(
-      daily.conversations,
-      CONVERSATION_CONCURRENCY,
-      async (conversation) => {
-        const detail = await fetchConversation(context, conversation.id);
-        const markdown = formatConversationMarkdown(detail);
-        await writeFile(
-          path.join(conversationsDir, `${conversation.id}.md`),
-          markdown,
-          "utf8"
-        );
-        conversationTask.advance(1);
-      }
-    );
-  }
   dailyTask.advance(1);
 }
 
@@ -719,6 +687,15 @@ function resolveConversationFolderName(conversation: ConversationDetail): string
   const timestamp = conversation.start_time ?? conversation.created_at ?? 0;
   const timeZone = resolveTimezone(conversation.timezone);
   return formatDateInTimeZone(timestamp, timeZone);
+}
+
+function resolveConversationLink(
+  summary: DailySummaryDetail,
+  conversation: { id: number; start_time: number }
+): string {
+  const timeZone = resolveTimezone(summary.timezone);
+  const dateFolder = formatDateInTimeZone(conversation.start_time, timeZone);
+  return `../../conversations/${dateFolder}/${conversation.id}.md`;
 }
 
 async function writeFactsMarkdown(
@@ -834,8 +811,9 @@ function formatDailySummaryMarkdown(summary: DailySummaryDetail): string {
           ? formatDateTime(conversation.end_time)
           : "n/a";
       const short = conversation.short_summary ?? "(no summary)";
+      const link = resolveConversationLink(summary, conversation);
       lines.push(
-        `- ${conversation.id} (${start} - ${end}) — ${short} (conversations/${conversation.id}.md)`
+        `- ${conversation.id} (${start} - ${end}) — ${short} (${link})`
       );
     }
   } else {
