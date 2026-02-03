@@ -1,6 +1,27 @@
 # 🐝 Bee CLI
 
-CLI client for bee.computer. Export your Bee data as markdown files for use with AI agents, local search, and backup.
+CLI client for [Bee](https://www.bee.computer/) — the wearable AI that captures your conversations and learns about you.
+
+## What is Bee?
+
+Bee is a wearable personal AI device that sits quietly in the background, capturing your conversations and experiences throughout the day. It transforms ambient context into:
+
+- **Conversation transcripts** with speaker identification
+- **Daily summaries** of your activities and discussions
+- **Facts** — things Bee learns and remembers about you
+- **Todos** — action items extracted from your conversations
+- **Personal insights** and patterns over time
+
+Bee understands 40+ languages, features 7-day battery life, and works with the iOS app to give you a searchable, AI-powered memory of your life.
+
+## Why Bee CLI?
+
+The Bee CLI exports your personal data as markdown files, making it available to:
+
+- **AI agents**: Give Claude, GPT, or other assistants your personal context so they can help you more effectively
+- **Local search**: Use grep, ripgrep, or your editor to search across all your conversations
+- **Backup**: Keep a portable, offline copy of your Bee data
+- **Custom integrations**: Build workflows with your conversation history, facts, and todos
 
 ## Installation
 
@@ -56,12 +77,7 @@ bee <command> [options]
 
 ## Sync Command
 
-The `sync` command exports all your Bee data to a local directory as markdown files. This is ideal for:
-
-- **AI agents**: Feed your personal context to Claude, GPT, or other AI assistants
-- **Local search**: Use grep, ripgrep, or your favorite tools to search your data
-- **Backup**: Keep a local copy of your Bee data in a portable format
-- **Integration**: Build custom workflows with your personal data
+The `sync` command exports all your Bee data to a local directory as markdown files.
 
 ### Usage
 
