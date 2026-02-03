@@ -449,32 +449,13 @@ function normalizeBaseUrl(url: string): string {
   return url.endsWith("/") ? url : `${url}/`;
 }
 
-type PairingFetchInit = RequestInit & {
-  tls?: { ca?: string | string[] };
-};
-
 async function fetchPairing(
-  env: Environment,
+  _env: Environment,
   baseUrl: string,
-  init: PairingFetchInit
+  init: RequestInit
 ): Promise<Response> {
   const url = new URL("/apps/pairing/request", baseUrl);
-  if (shouldUseCustomCa(env, baseUrl)) {
-    const config = getEnvironmentConfig(env);
-    return fetch(url, { ...init, tls: { ca: [...config.caCerts] } });
-  }
   return fetch(url, init);
-}
-
-function shouldUseCustomCa(env: Environment, baseUrl: string): boolean {
-  try {
-    const config = getEnvironmentConfig(env);
-    const baseHost = new URL(baseUrl).host;
-    const configHost = new URL(config.apiUrl).host;
-    return baseHost === configHost;
-  } catch {
-    return false;
-  }
 }
 
 class PairingEndpointNotFoundError extends Error {
