@@ -26,8 +26,8 @@ build_target() {
   local archive_ext
 
   local args=("build" "$ENTRY" "--compile" "--target=$bun_target" "--outfile" "$outfile")
-  local env_key="${name^^}"
-  env_key="${env_key//-/_}"
+  local env_key
+  env_key=$(printf "%s" "$name" | tr '[:lower:]-' '[:upper:]_')
   local target_exec_var="BUN_COMPILE_EXECUTABLE_PATH_${env_key}"
   local target_exec_path="${!target_exec_var-}"
   if [[ -z "$target_exec_path" && -n "${BUN_COMPILE_EXECUTABLE_PATH-}" ]]; then
