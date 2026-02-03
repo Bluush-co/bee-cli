@@ -51,11 +51,11 @@ build_target() {
 
   if [[ "$name" == windows-* ]]; then
     archive_ext="zip"
-    archive="$ARCHIVE_ROOT/$name.$archive_ext"
+    archive="$ARCHIVE_ROOT/bee-$name.$archive_ext"
     (cd "$out_dir" && zip -q -9 -j "$archive" "$out_name")
   else
     archive_ext="tar.gz"
-    archive="$ARCHIVE_ROOT/$name.$archive_ext"
+    archive="$ARCHIVE_ROOT/bee-$name.$archive_ext"
     tar -C "$out_dir" -czf "$archive" "$out_name"
   fi
   echo "Archived $archive"
