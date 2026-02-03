@@ -11,7 +11,6 @@ declare -a TARGETS=(
   "mac-x64:bun-darwin-x64:bee"
   "mac-arm64:bun-darwin-arm64:bee"
   "windows-x64:bun-windows-x64:bee.exe"
-  "windows-arm64:bun-windows-arm64:bee.exe"
 )
 
 build_target() {
