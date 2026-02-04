@@ -20,6 +20,7 @@
     "dev": "bun ./sources/main.ts",
     "prepack": "bun run build:all",
     "postinstall": "node ./scripts/postinstall.js",
+    "release": "bash ./scripts/release.sh",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
