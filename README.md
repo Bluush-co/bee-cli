@@ -1,4 +1,5 @@
-<div align="center"><img src="https://github.com/user-attachments/assets/553a248c-3dc4-4e5f-9140-becbca8948d0" width="400" title="Bee" alt="Bee"/></div>
+<div align="center"><img width="495" height="174" alt="Bee Rounded@2x" src="https://github.com/user-attachments/assets/d24ad62a-aad7-487a-a634-efde561194fe" />
+</div>
 
 <h1 align="center">
   CLI Client for Bee AI
