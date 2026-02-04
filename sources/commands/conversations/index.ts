@@ -67,6 +67,7 @@ async function handleList(
   const nowMs = Date.now();
   const timeZone = resolveTimeZone(payload.timezone);
   const lines: string[] = ["# Conversations", ""];
+  lines.push(formatTimeZoneHeader(timeZone), "");
 
   if (payload.conversations.length === 0) {
     lines.push("- (none)", "");
@@ -184,8 +185,9 @@ function parseId(args: readonly string[]): number {
 type ConversationSummary = {
   id: number;
   start_time: number;
+  end_time: number | null;
   created_at: number;
-  short_summary?: string | null;
+  summary: string | null;
 };
 
 type ConversationDetail = {
@@ -274,18 +276,15 @@ function formatConversationSummaryBlock(
 ): string[] {
   const lines: string[] = [];
   lines.push(`${headingPrefix} Conversation ${conversation.id}`, "");
-  lines.push(formatTimeZoneHeader(timeZone));
+  const resolvedDate = resolveConversationDate(conversation);
   lines.push(
-    `- start_time: ${formatDateValue(conversation.start_time, timeZone, nowMs)}`
+    `- date: ${formatDateValue(resolvedDate, timeZone, nowMs)}`
   );
   lines.push(
-    `- created_at: ${formatDateValue(conversation.created_at, timeZone, nowMs)}`
+    `- end_time: ${formatDateValue(conversation.end_time, timeZone, nowMs)}`
   );
-  if (conversation.short_summary) {
-    lines.push(
-      `- short_summary: ${conversation.short_summary.trim() || "(empty)"}`
-    );
-  }
+  lines.push("");
+  lines.push(...formatSummaryText(conversation.summary));
   lines.push("");
   return lines;
 }
@@ -409,4 +408,18 @@ function normalizeRecord(payload: unknown): Record<string, unknown> {
     return payload as Record<string, unknown>;
   }
   return { value: payload };
+}
+
+function resolveConversationDate(
+  conversation: Pick<ConversationSummary, "created_at" | "start_time">
+): number | null {
+  return conversation.created_at ?? conversation.start_time ?? null;
+}
+
+function formatSummaryText(summary: string | null): string[] {
+  const normalized = summary?.trim() ?? "";
+  if (!normalized) {
+    return ["(empty)"];
+  }
+  return normalized.split(/\r?\n/);
 }
