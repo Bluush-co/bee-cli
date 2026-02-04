@@ -1,3 +1,5 @@
+import { formatDistanceStrict } from "date-fns";
+
 export type OutputFormat = "markdown" | "json";
 
 const FALLBACK_TIMEZONE = "America/Los_Angeles";
@@ -125,22 +127,10 @@ function formatDateTimeParts(
 }
 
 function formatRelativeTime(nowMs: number, epochMs: number): string {
-  const diffMs = nowMs - epochMs;
-  const diffSeconds = Math.round(Math.abs(diffMs) / 1000);
-  const diffMinutes = Math.round(diffSeconds / 60);
-  const diffHours = Math.round(diffMinutes / 60);
-  const diffDays = Math.round(diffHours / 24);
-  const suffix = diffMs >= 0 ? "ago" : "from now";
-  if (diffSeconds < 90) {
-    return `${diffSeconds}sec ${suffix}`;
-  }
-  if (diffMinutes < 90) {
-    return `${diffMinutes}min ${suffix}`;
-  }
-  if (diffHours < 36) {
-    return `${diffHours}hr ${suffix}`;
-  }
-  return `${diffDays}day ${suffix}`;
+  return formatDistanceStrict(new Date(epochMs), new Date(nowMs), {
+    addSuffix: true,
+    roundingMethod: "round",
+  });
 }
 
 function normalizeEpochMs(value: number): number | null {

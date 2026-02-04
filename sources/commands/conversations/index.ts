@@ -72,11 +72,14 @@ async function handleList(
   if (payload.conversations.length === 0) {
     lines.push("- (none)", "");
   } else {
-    for (const conversation of payload.conversations) {
+    payload.conversations.forEach((conversation, index) => {
       lines.push(
         ...formatConversationSummaryBlock(conversation, nowMs, timeZone, "###")
       );
-    }
+      if (index < payload.conversations.length - 1) {
+        lines.push("---", "");
+      }
+    });
   }
 
   if (payload.next_cursor) {
@@ -276,9 +279,9 @@ function formatConversationSummaryBlock(
 ): string[] {
   const lines: string[] = [];
   lines.push(`${headingPrefix} Conversation ${conversation.id}`, "");
-  const resolvedDate = resolveConversationDate(conversation);
+  const startTime = resolveConversationStartTime(conversation);
   lines.push(
-    `- date: ${formatDateValue(resolvedDate, timeZone, nowMs)}`
+    `- start_time: ${formatDateValue(startTime, timeZone, nowMs)}`
   );
   lines.push(
     `- end_time: ${formatDateValue(conversation.end_time, timeZone, nowMs)}`
@@ -410,10 +413,10 @@ function normalizeRecord(payload: unknown): Record<string, unknown> {
   return { value: payload };
 }
 
-function resolveConversationDate(
+function resolveConversationStartTime(
   conversation: Pick<ConversationSummary, "created_at" | "start_time">
 ): number | null {
-  return conversation.created_at ?? conversation.start_time ?? null;
+  return conversation.start_time ?? conversation.created_at ?? null;
 }
 
 function formatSummaryText(summary: string | null): string[] {
