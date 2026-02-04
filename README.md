@@ -103,6 +103,178 @@ By default, data commands return markdown. Use `--json` to print raw JSON.
 
 - `version` - Print the CLI version. Use `--json` for JSON output.
 
+## Stream Events
+
+Use `bee stream` to receive server-sent events (SSE). You can filter events with
+`--types` (comma-separated) or pass `--types all` to receive everything. Each
+event includes an `event` name and a JSON `data` payload.
+
+Below are the event types and the payload fields the CLI expects/prints.
+
+### connected
+
+Sent when the stream connects. The `data` payload is typically empty or ignored.
+
+### new-utterance
+
+New transcript snippet.
+
+Payload:
+```json
+{
+  "utterance": {
+    "text": "Hello there",
+    "speaker": "speaker_1"
+  },
+  "conversation_uuid": "uuid-string"
+}
+```
+
+### new-conversation
+
+Conversation created.
+
+Payload:
+```json
+{
+  "conversation": {
+    "id": 123,
+    "uuid": "uuid-string",
+    "state": "processing",
+    "title": "Optional title"
+  }
+}
+```
+
+### update-conversation
+
+Conversation updated.
+
+Payload:
+```json
+{
+  "conversation": {
+    "id": 123,
+    "state": "processed",
+    "title": "Optional title",
+    "short_summary": "Optional short summary"
+  }
+}
+```
+
+### update-conversation-summary
+
+Short summary updated.
+
+Payload:
+```json
+{
+  "conversation_id": 123,
+  "short_summary": "Summary text"
+}
+```
+
+### delete-conversation
+
+Conversation deleted.
+
+Payload:
+```json
+{
+  "conversation": {
+    "id": 123,
+    "title": "Optional title"
+  }
+}
+```
+
+### update-location
+
+Conversation location updated.
+
+Payload:
+```json
+{
+  "conversation_id": 123,
+  "location": {
+    "latitude": 37.77,
+    "longitude": -122.41,
+    "name": "Optional name"
+  }
+}
+```
+
+### todo-created
+
+Todo created.
+
+Payload:
+```json
+{
+  "todo": {
+    "id": 10,
+    "text": "Call dentist",
+    "completed": false,
+    "alarmAt": 1700000000000
+  }
+}
+```
+
+### todo-updated
+
+Todo updated (same payload as todo-created).
+
+### todo-deleted
+
+Todo deleted.
+
+Payload:
+```json
+{
+  "todo": {
+    "id": 10,
+    "text": "Optional text"
+  }
+}
+```
+
+### journal-created
+
+Journal created.
+
+Payload:
+```json
+{
+  "journal": {
+    "id": 55,
+    "state": "processed",
+    "text": "Optional raw text",
+    "aiResponse": {
+      "message": "Optional assistant message",
+      "cleanedUpText": "Optional cleaned text",
+      "followUp": "Optional follow up",
+      "todos": ["Optional todo"]
+    }
+  }
+}
+```
+
+### journal-updated
+
+Journal updated (same payload as journal-created).
+
+### journal-deleted
+
+Journal deleted.
+
+Payload:
+```json
+{
+  "journalId": 55,
+  "reason": "Optional reason"
+}
+```
+
 ## Sync Command
 
 The `sync` command exports all your Bee data to a local directory as markdown files.
