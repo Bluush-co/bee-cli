@@ -22,12 +22,9 @@ export const changedCommand: Command = {
       method: "GET",
     });
     const payload = parseChangesResponse(data);
-    const nowSeconds = normalizeUnixSeconds(payload.now);
-    const nowMs = normalizeUnixMs(payload.now);
+    const nowSeconds = normalizeUnixSeconds(payload.until);
+    const nowMs = normalizeUnixMs(payload.until);
     const timeZone = resolveTimeZone(payload.timezone);
-    const sinceSeconds =
-      parseCursorSeconds(cursor ?? payload.cursor ?? null) ??
-      Math.max(0, nowSeconds - 24 * 60 * 60);
 
     const [facts, todos, dailies, conversations, journals] = await Promise.all([
       fetchFacts(context, payload.facts),
@@ -41,7 +38,8 @@ export const changedCommand: Command = {
       meta: {
         cursor,
         next_cursor: payload.next_cursor ?? null,
-        now: nowSeconds,
+        since: payload.since,
+        until: payload.until,
         updated: payload.updated,
         timezone: payload.timezone,
       },
@@ -58,12 +56,11 @@ export const changedCommand: Command = {
     }
 
     const output: string[] = [];
-    output.push(
-      `# Changed Since ${formatDateValue(sinceSeconds, timeZone, nowMs)}`,
-      "",
-      `Current Unix Time: ${nowSeconds}`,
-      ""
-    );
+    output.push("# Changed", "", `From: ${formatDateValue(payload.since, timeZone, nowMs)}`);
+    output.push(`Until: ${formatDateValue(payload.until, timeZone, nowMs)}`);
+    output.push(`Current Unix Time: ${nowSeconds}`);
+    output.push(`Cursor: ${cursor ?? "(none)"}`);
+    output.push(`Next Cursor: ${payload.next_cursor ?? "(none)"}`, "");
 
     const sections = renderChangedSections({
       facts,
@@ -140,10 +137,10 @@ type ChangesResponse = {
   dailies: number[];
   journals: string[];
   todos: number[];
-  now: number;
+  since: number;
+  until: number;
   updated: boolean;
   timezone: string | null;
-  cursor?: string | null;
   next_cursor?: string | null;
 };
 
@@ -157,10 +154,10 @@ function parseChangesResponse(payload: unknown): ChangesResponse {
     dailies?: number[];
     journals?: string[];
     todos?: number[];
-    now?: number;
+    since?: number;
+    until?: number;
     updated?: boolean;
     timezone?: string;
-    cursor?: string | null;
     next_cursor?: string | null;
   };
 
@@ -180,10 +177,10 @@ function parseChangesResponse(payload: unknown): ChangesResponse {
     dailies: data.dailies,
     journals: data.journals,
     todos: data.todos,
-    now: typeof data.now === "number" ? data.now : Date.now(),
+    since: typeof data.since === "number" ? data.since : Date.now(),
+    until: typeof data.until === "number" ? data.until : Date.now(),
     updated: data.updated === true,
     timezone: typeof data.timezone === "string" ? data.timezone : null,
-    cursor: typeof data.cursor === "string" ? data.cursor : null,
     next_cursor: typeof data.next_cursor === "string" ? data.next_cursor : null,
   };
 }
@@ -657,15 +654,4 @@ function normalizeUnixMs(value: number): number {
     return Date.now();
   }
   return value > 1e12 ? value : value * 1000;
-}
-
-function parseCursorSeconds(cursor?: string | null): number | null {
-  if (!cursor) {
-    return null;
-  }
-  const parsed = Number.parseInt(cursor, 10);
-  if (!Number.isFinite(parsed)) {
-    return null;
-  }
-  return parsed;
 }
