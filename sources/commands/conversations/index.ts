@@ -77,7 +77,7 @@ async function handleList(
         ...formatConversationSummaryBlock(conversation, nowMs, timeZone, "###")
       );
       if (index < payload.conversations.length - 1) {
-        lines.push("---", "");
+        lines.push("-----", "");
       }
     });
   }
