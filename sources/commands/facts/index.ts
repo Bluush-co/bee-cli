@@ -9,7 +9,7 @@ import {
 } from "@/utils/markdown";
 
 const USAGE = [
-  "bee facts list [--limit N] [--cursor <cursor>] [--confirmed <true|false>] [--json]",
+  "bee facts list [--limit N] [--cursor <cursor>] [--unconfirmed] [--json]",
   "bee facts get <id> [--json]",
   "bee facts create --text <text> [--json]",
   "bee facts update <id> --text <text> [--confirmed <true|false>] [--json]",
@@ -51,7 +51,7 @@ export const factsCommand: Command = {
 type ListOptions = {
   limit?: number;
   cursor?: string;
-  confirmed?: "true" | "false";
+  unconfirmed?: boolean;
 };
 
 async function handleList(
@@ -68,9 +68,7 @@ async function handleList(
   if (options.cursor !== undefined) {
     params.set("cursor", options.cursor);
   }
-  if (options.confirmed !== undefined) {
-    params.set("confirmed", options.confirmed);
-  }
+  params.set("confirmed", options.unconfirmed ? "false" : "true");
 
   const suffix = params.toString();
   const path = suffix ? `/v1/facts?${suffix}` : "/v1/facts";
@@ -80,16 +78,10 @@ async function handleList(
     return;
   }
   const payload = parseFactsList(data);
-  const nowMs = Date.now();
-  const timeZone = resolveTimeZone(payload.timezone);
-  const confirmed = payload.facts.filter((fact) => fact.confirmed);
-  const pending = payload.facts.filter((fact) => !fact.confirmed);
+  const title = options.unconfirmed ? "Pending Facts" : "Confirmed Facts";
 
-  const lines: string[] = ["# Facts", ""];
-  lines.push("## Confirmed", "");
-  lines.push(...formatFactsSection(confirmed, nowMs, timeZone, "###"));
-  lines.push("## Pending", "");
-  lines.push(...formatFactsSection(pending, nowMs, timeZone, "###"));
+  const lines: string[] = [`# ${title}`, ""];
+  lines.push(...formatFactsList(payload.facts));
 
   if (payload.next_cursor) {
     lines.push("-----", "");
@@ -134,17 +126,8 @@ function parseListArgs(args: readonly string[]): ListOptions {
       continue;
     }
 
-    if (arg === "--confirmed") {
-      const value = args[i + 1];
-      if (value === undefined) {
-        throw new Error("--confirmed requires a value");
-      }
-      const normalized = value.toLowerCase();
-      if (normalized !== "true" && normalized !== "false") {
-        throw new Error("--confirmed must be true or false");
-      }
-      options.confirmed = normalized;
-      i += 1;
+    if (arg === "--unconfirmed") {
+      options.unconfirmed = true;
       continue;
     }
 
@@ -487,21 +470,11 @@ function parseFactResponse(payload: unknown): {
   };
 }
 
-function formatFactsSection(
-  facts: Fact[],
-  nowMs: number,
-  timeZone: string,
-  headingPrefix: string
-): string[] {
+function formatFactsList(facts: Fact[]): string[] {
   if (facts.length === 0) {
     return ["- (none)", ""];
   }
-
-  const lines: string[] = [];
-  for (const fact of facts) {
-    lines.push(...formatFactBlock(fact, nowMs, timeZone, headingPrefix));
-  }
-  return lines;
+  return facts.map((fact) => `- ${fact.text.trim() || "(empty)"}`);
 }
 
 function formatFactDocument(
