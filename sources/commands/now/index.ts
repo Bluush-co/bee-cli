@@ -74,6 +74,7 @@ type ConversationDetail = {
   end_time: number | null;
   summary: string | null;
   short_summary: string | null;
+  state: string;
   created_at: number;
   transcriptions: Array<{
     id: number;
@@ -219,9 +220,12 @@ function formatConversationNow(
   lines.push(
     `- start_time: ${formatDateValue(conversation.start_time, timeZone, nowMs)}`
   );
-  lines.push(
-    `- end_time: ${formatDateValue(conversation.end_time, timeZone, nowMs)}`
-  );
+  if (conversation.end_time !== null) {
+    lines.push(
+      `- end_time: ${formatDateValue(conversation.end_time, timeZone, nowMs)}`
+    );
+  }
+  lines.push(`- state: ${conversation.state}`);
   lines.push("");
 
   const summaryText = resolveSummaryText(conversation);

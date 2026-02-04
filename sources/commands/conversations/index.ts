@@ -191,6 +191,7 @@ type ConversationSummary = {
   end_time: number | null;
   created_at: number;
   summary: string | null;
+  state: string;
 };
 
 type ConversationDetail = {
@@ -283,9 +284,12 @@ function formatConversationSummaryBlock(
   lines.push(
     `- start_time: ${formatDateValue(startTime, timeZone, nowMs)}`
   );
-  lines.push(
-    `- end_time: ${formatDateValue(conversation.end_time, timeZone, nowMs)}`
-  );
+  if (conversation.end_time !== null) {
+    lines.push(
+      `- end_time: ${formatDateValue(conversation.end_time, timeZone, nowMs)}`
+    );
+  }
+  lines.push(`- state: ${conversation.state}`);
   lines.push("");
   lines.push(...formatSummaryText(conversation.summary));
   lines.push("");
