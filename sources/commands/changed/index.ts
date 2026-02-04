@@ -52,25 +52,37 @@ export const changedCommand: Command = {
       return;
     }
 
-    const sections: string[][] = [];
-    sections.push(...renderFactsSections(facts));
-    sections.push(renderTodosList(todos, nowMs, timeZone));
-    sections.push(renderDailyList(dailies, nowMs, timeZone));
-    sections.push(renderConversationList(conversations, nowMs, timeZone));
-    sections.push(renderJournalList(journals, nowMs, timeZone));
-
     const output: string[] = [];
-    const usableSections = sections.filter((section) => section.length > 0);
-    usableSections.forEach((section, index) => {
+    const nowIso = new Date(payload.now).toISOString();
+    output.push(
+      `# Changed Since ${formatDateValue(since, timeZone, nowMs)}`,
+      "",
+      `Current Time: ${nowIso}`,
+      ""
+    );
+
+    const sections = renderChangedSections({
+      facts,
+      todos,
+      dailies,
+      conversations,
+      journals,
+      nowMs,
+      timeZone,
+    });
+
+    if (sections.length === 0) {
+      output.push("Nothing changed", "");
+      console.log(output.join("\n"));
+      return;
+    }
+
+    sections.forEach((section, index) => {
       if (index > 0) {
         output.push("-----", "");
       }
       output.push(...section);
     });
-
-    if (output.length === 0) {
-      output.push("# Changes", "", "- (none)", "");
-    }
 
     console.log(output.join("\n"));
   },
@@ -385,13 +397,60 @@ function parseJournalDetail(payload: unknown): JournalSummary | null {
   return null;
 }
 
+function renderChangedSections(options: {
+  facts: Fact[];
+  todos: Todo[];
+  dailies: DailySummary[];
+  conversations: ConversationSummary[];
+  journals: JournalSummary[];
+  nowMs: number;
+  timeZone: string;
+}): string[][] {
+  const sections: string[][] = [];
+  sections.push(...renderFactsSections(options.facts));
+
+  const todosSection = renderTodosList(options.todos, options.nowMs, options.timeZone);
+  if (options.todos.length > 0) {
+    sections.push(todosSection);
+  }
+
+  const dailySection = renderDailyList(options.dailies, options.nowMs, options.timeZone);
+  if (options.dailies.length > 0) {
+    sections.push(dailySection);
+  }
+
+  const conversationSection = renderConversationList(
+    options.conversations,
+    options.nowMs,
+    options.timeZone
+  );
+  if (options.conversations.length > 0) {
+    sections.push(conversationSection);
+  }
+
+  const journalSection = renderJournalList(
+    options.journals,
+    options.nowMs,
+    options.timeZone
+  );
+  if (options.journals.length > 0) {
+    sections.push(journalSection);
+  }
+
+  return sections.filter((section) => section.length > 0);
+}
+
 function renderFactsSections(facts: Fact[]): string[][] {
   const confirmed = facts.filter((fact) => fact.confirmed);
   const pending = facts.filter((fact) => !fact.confirmed);
-  return [
-    formatFactsListSection("Confirmed Facts", confirmed),
-    formatFactsListSection("Pending Facts", pending),
-  ];
+  const sections: string[][] = [];
+  if (confirmed.length > 0) {
+    sections.push(formatFactsListSection("Confirmed Facts", confirmed));
+  }
+  if (pending.length > 0) {
+    sections.push(formatFactsListSection("Pending Facts", pending));
+  }
+  return sections;
 }
 
 function formatFactsListSection(title: string, facts: Fact[]): string[] {
@@ -458,11 +517,6 @@ function renderDailyList(
   const lines: string[] = ["# Daily Summaries", ""];
   lines.push(formatTimeZoneHeader(timeZone), "");
 
-  if (dailies.length === 0) {
-    lines.push("- (none)", "");
-    return lines;
-  }
-
   dailies.forEach((summary, index) => {
     lines.push(...formatDailySummaryBlock(summary, nowMs, timeZone, "###"));
     if (index < dailies.length - 1) {
@@ -509,11 +563,6 @@ function renderConversationList(
   const lines: string[] = ["# Conversations", ""];
   lines.push(formatTimeZoneHeader(timeZone), "");
 
-  if (conversations.length === 0) {
-    lines.push("- (none)", "");
-    return lines;
-  }
-
   conversations.forEach((conversation, index) => {
     lines.push(
       ...formatConversationSummaryBlock(conversation, nowMs, timeZone, "###")
@@ -556,11 +605,6 @@ function renderJournalList(
 ): string[] {
   const lines: string[] = ["# Journals", ""];
   lines.push(formatTimeZoneHeader(timeZone), "");
-
-  if (journals.length === 0) {
-    lines.push("- (none)", "");
-    return lines;
-  }
 
   journals.forEach((journal, index) => {
     lines.push(...formatJournalSummaryBlock(journal, nowMs, timeZone, "###"));
