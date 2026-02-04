@@ -29,13 +29,13 @@ type StreamOptions = {
     webhookBody?: string;
 };
 
-type StreamOutputFormat = "pretty" | "json" | "message";
+type StreamOutputFormat = "pretty" | "json" | "agent";
 
 const USAGE = [
     "bee stream",
     "bee stream --types new-utterance,update-conversation",
     "bee stream --json",
-    "bee stream --format message",
+    "bee stream --format agent",
     "bee stream --types all",
     "bee stream --webhook-endpoint https://example.com/hooks/agent --webhook-body '{\"message\":\"{{message}}\"}'",
 ].join("\n");
@@ -87,7 +87,7 @@ function parseArgs(args: readonly string[]): StreamOptions {
             if (value === undefined) {
                 throw new Error("--format requires a value");
             }
-            if (value !== "pretty" && value !== "json" && value !== "message") {
+            if (value !== "pretty" && value !== "json" && value !== "agent") {
                 throw new Error(`Unknown format: ${value}`);
             }
             if (formatExplicit && options.format !== value) {
@@ -331,7 +331,7 @@ async function handleEvent(
     if (event.event === "connected") {
         if (options.format === "json") {
             console.log(event.data);
-        } else if (options.format === "message") {
+        } else if (options.format === "agent") {
             console.log("Event connected: stream connected.");
         } else {
             console.log(`${dim(timestamp)} ${green("CONNECTED")}`);
@@ -367,7 +367,7 @@ async function handleEvent(
     if (options.format === "json") {
         // Raw JSON output for piping
         console.log(event.data);
-    } else if (options.format === "message") {
+    } else if (options.format === "agent") {
         console.log(agentMessage);
     } else {
         // Formatted output
