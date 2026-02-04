@@ -2,7 +2,9 @@ import type { Command, CommandContext } from "@/commands/types";
 import { createDeveloperClient } from "@/client";
 import { conversationsCommand } from "@/commands/conversations";
 import { dailyCommand } from "@/commands/daily";
+import { changedCommand } from "@/commands/changed";
 import { factsCommand } from "@/commands/facts";
+import { journalsCommand } from "@/commands/journals";
 import { loginCommand } from "@/commands/login";
 import { logoutCommand } from "@/commands/logout";
 import { meCommand } from "@/commands/me";
@@ -24,9 +26,11 @@ const commands = [
   logoutCommand,
   statusCommand,
   todayCommand,
+  changedCommand,
   conversationsCommand,
   dailyCommand,
   factsCommand,
+  journalsCommand,
   meCommand,
   searchCommand,
   streamCommand,

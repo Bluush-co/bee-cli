@@ -53,6 +53,8 @@ By default, data commands return markdown. Use `--json` to print raw JSON.
 
 - `today` - Fetch today's brief (calendar events and emails). Use `--json` for JSON output.
 
+- `changed` - Fetch recent changes. Use `--since <iso>` and `--json` for JSON output.
+
 - `facts` - Manage your facts (things Bee remembers about you).
   - `facts list` - List facts. Options: `--limit N`, `--cursor <cursor>`, `--unconfirmed`, `--json`.
   - `facts get <id>` - Get a specific fact. Options: `--json`.
@@ -74,6 +76,10 @@ By default, data commands return markdown. Use `--json` to print raw JSON.
 - `daily` - Access daily summaries of your activity.
   - `daily list` - List daily summaries. Options: `--limit N`, `--json`.
   - `daily get <id>` - Get a specific daily summary. Options: `--json`.
+
+- `journals` - Access your journals.
+  - `journals list` - List journals. Options: `--limit N`, `--cursor <cursor>`, `--json`.
+  - `journals get <id>` - Get a specific journal. Options: `--json`.
 
 - `search` - Search your data.
   - `search conversations --query <text>` - Search conversations. Options: `--limit N`, `--cursor <cursor>`, `--json`.
