@@ -7,7 +7,7 @@ import {
   resolveTimeZone,
 } from "@/utils/markdown";
 
-const USAGE = "bee changed [--since <iso>] [--json]";
+const USAGE = "bee changed [--since <unix>] [--json]";
 
 export const changedCommand: Command = {
   name: "changed",
@@ -53,11 +53,10 @@ export const changedCommand: Command = {
     }
 
     const output: string[] = [];
-    const nowIso = new Date(payload.now).toISOString();
     output.push(
-      `# Changed Since ${formatDateValue(since, timeZone, nowMs)}`,
+      `# Changed Since ${formatDateValue(Number.parseInt(since, 10), timeZone, nowMs)}`,
       "",
-      `Current Time: ${nowIso}`,
+      `Current Unix Time: ${payload.now}`,
       ""
     );
 
@@ -107,7 +106,11 @@ function parseChangedArgs(args: readonly string[]): ChangedOptions {
       if (value === undefined) {
         throw new Error("--since requires a value");
       }
-      since = value;
+      const parsed = Number.parseInt(value, 10);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        throw new Error("--since must be a unix timestamp in seconds");
+      }
+      since = String(parsed);
       i += 1;
       continue;
     }
@@ -133,7 +136,7 @@ function parseChangedArgs(args: readonly string[]): ChangedOptions {
 function resolveDefaultSince(): string {
   const nowMs = Date.now();
   const sinceMs = nowMs - 24 * 60 * 60 * 1000;
-  return new Date(sinceMs).toISOString();
+  return String(Math.floor(sinceMs / 1000));
 }
 
 type ChangesResponse = {
