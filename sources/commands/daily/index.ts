@@ -67,6 +67,7 @@ async function handleList(
   const nowMs = Date.now();
   const timeZone = resolveTimeZone(payload.timezone);
   const lines: string[] = ["# Daily Summaries", ""];
+  lines.push(formatTimeZoneHeader(timeZone), "");
 
   if (payload.daily_summaries.length === 0) {
     lines.push("- (none)", "");
@@ -272,10 +273,10 @@ function formatDailySummaryBlock(
   const lines: string[] = [];
   lines.push(`${headingPrefix} Daily Summary ${summary.id}`, "");
   const resolvedDate = resolveDailyDate(summary);
-  lines.push(formatTimeZoneHeader(timeZone));
   lines.push(`- date: ${formatDateValue(resolvedDate, timeZone, nowMs)}`);
-  lines.push("- short_summary:");
-  lines.push(...formatQuotedText(summary.short_summary));
+  lines.push("");
+  lines.push("Summary:");
+  lines.push(...formatQuotedText(summary.summary ?? ""));
   lines.push("");
   return lines;
 }
