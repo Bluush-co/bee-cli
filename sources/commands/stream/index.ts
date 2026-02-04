@@ -33,6 +33,7 @@ const USAGE = [
     "bee stream",
     "bee stream --types new-utterance,update-conversation",
     "bee stream --json",
+    "bee stream --types all",
     "bee stream --webhook-endpoint https://example.com/hooks/agent --webhook-body '{\"message\":\"{{message}}\"}'",
 ].join("\n");
 
@@ -308,12 +309,12 @@ async function handleEvent(
             console.log(`${dim(timestamp)} ${green("CONNECTED")}`);
         }
 
-        if (webhook) {
-            await sendWebhook(webhook, {
-                message: "CONNECTED",
-                event: event.event,
-                timestamp,
-                raw: event.data,
+    if (webhook && shouldSendWebhook(event.event, options)) {
+        await sendWebhook(webhook, {
+            message: "CONNECTED",
+            event: event.event,
+            timestamp,
+            raw: event.data,
             });
         }
         return;
@@ -339,7 +340,7 @@ async function handleEvent(
         console.log(`${dim(timestamp)} ${colored(event.event)} ${formattedColored}`);
     }
 
-    if (webhook) {
+    if (webhook && shouldSendWebhook(event.event, options)) {
         const payload: WebhookPayload = {
             message: formattedPlain,
             event: event.event,
@@ -351,6 +352,16 @@ async function handleEvent(
         }
         await sendWebhook(webhook, payload);
     }
+}
+
+function shouldSendWebhook(eventType: string, options: StreamOptions): boolean {
+    if (!options.types || options.types.length === 0) {
+        return true;
+    }
+    if (options.types.includes("all")) {
+        return true;
+    }
+    return options.types.includes(eventType);
 }
 
 async function sendWebhook(
