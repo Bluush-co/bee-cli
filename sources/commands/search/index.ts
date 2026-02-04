@@ -64,7 +64,7 @@ async function handleConversations(
   const nowMs = Date.now();
   const payload = parseSearchConversations(data);
   if (!payload) {
-    const timeZone = resolveTimeZone(extractTimeZone(data));
+    const timeZone = resolveTimeZone(parseSearchTimezone(data));
     console.log(
       formatRecordMarkdown({
         title: "Conversation Search Results",
@@ -80,8 +80,8 @@ async function handleConversations(
   if (payload.conversations.length === 0) {
     lines.push("- (none)", "");
   } else {
+    const timeZone = resolveTimeZone(payload.timezone);
     for (const conversation of payload.conversations) {
-      const timeZone = resolveTimeZone(extractTimeZone(conversation));
       lines.push(
         formatRecordMarkdown({
           title: `Conversation ${conversation.id ?? "unknown"}`,
@@ -176,54 +176,43 @@ function parseConversationsArgs(args: readonly string[]): ConversationsOptions {
 }
 
 type ConversationSearchItem = Record<string, unknown> & {
-  id?: number;
-  timezone?: string | null;
-  time_zone?: string | null;
-  timeZone?: string | null;
+  id?: number | string;
 };
 
 function parseSearchConversations(
   payload: unknown
-): { conversations: ConversationSearchItem[]; next_cursor: string | null } | null {
+): {
+  conversations: ConversationSearchItem[];
+  next_cursor: string | null;
+  timezone: string | null;
+} | null {
   if (!payload || typeof payload !== "object") {
     return null;
   }
-  const data = payload as Record<string, unknown>;
-  const candidates = [
-    data["conversations"],
-    data["results"],
-    data["matches"],
-    data["items"],
-  ];
-  const list = candidates.find((candidate) => Array.isArray(candidate));
-  if (!Array.isArray(list)) {
+  const data = payload as {
+    results?: unknown;
+    next_cursor?: unknown;
+    timezone?: unknown;
+  };
+  if (!Array.isArray(data.results)) {
     return null;
   }
   return {
-    conversations: list as ConversationSearchItem[],
+    conversations: data.results as ConversationSearchItem[],
     next_cursor:
-      typeof data["next_cursor"] === "string" || data["next_cursor"] === null
-        ? (data["next_cursor"] as string | null)
+      typeof data.next_cursor === "string" || data.next_cursor === null
+        ? (data.next_cursor as string | null)
         : null,
+    timezone: typeof data.timezone === "string" ? data.timezone : null,
   };
 }
 
-function extractTimeZone(value: unknown): string | null {
+function parseSearchTimezone(value: unknown): string | null {
   if (!value || typeof value !== "object") {
     return null;
   }
-  const record = value as Record<string, unknown>;
-  const candidates = [
-    record["timezone"],
-    record["time_zone"],
-    record["timeZone"],
-  ];
-  for (const candidate of candidates) {
-    if (typeof candidate === "string" && candidate.length > 0) {
-      return candidate;
-    }
-  }
-  return null;
+  const record = value as { timezone?: unknown };
+  return typeof record.timezone === "string" ? record.timezone : null;
 }
 
 function normalizeRecord(payload: unknown): Record<string, unknown> {

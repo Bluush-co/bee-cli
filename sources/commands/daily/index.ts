@@ -65,13 +65,14 @@ async function handleList(
   }
   const payload = parseDailyList(data);
   const nowMs = Date.now();
+  const timeZone = resolveTimeZone(payload.timezone);
   const lines: string[] = ["# Daily Summaries", ""];
 
   if (payload.daily_summaries.length === 0) {
     lines.push("- (none)", "");
   } else {
     for (const summary of payload.daily_summaries) {
-      lines.push(...formatDailySummaryBlock(summary, nowMs, "###"));
+      lines.push(...formatDailySummaryBlock(summary, nowMs, timeZone, "###"));
     }
   }
 
@@ -147,9 +148,9 @@ async function handleGet(
     return;
   }
   const nowMs = Date.now();
-  const timeZone = resolveTimeZone();
-  const summary = parseDailyDetail(data);
-  if (!summary) {
+  const payload = parseDailyDetail(data);
+  const timeZone = resolveTimeZone(payload?.timezone ?? null);
+  if (!payload) {
     console.log(
       formatRecordMarkdown({
         title: "Daily Summary",
@@ -160,7 +161,7 @@ async function handleGet(
     );
     return;
   }
-  console.log(formatDailyDetailDocument(summary, nowMs));
+  console.log(formatDailyDetailDocument(payload.summary, nowMs, timeZone));
 }
 
 function parseId(args: readonly string[]): number {
@@ -182,7 +183,6 @@ type DailySummary = {
   id: number;
   date: string | null;
   date_time: number | null;
-  timezone?: string | null;
   short_summary: string;
   summary: string | null;
   email_summary: string | null;
@@ -217,13 +217,18 @@ type DailySummaryDetail = DailySummary & {
 
 function parseDailyList(
   payload: unknown
-): { daily_summaries: DailySummary[]; next_cursor: string | null } {
+): {
+  daily_summaries: DailySummary[];
+  next_cursor: string | null;
+  timezone: string | null;
+} {
   if (!payload || typeof payload !== "object") {
     throw new Error("Invalid daily response.");
   }
   const data = payload as {
     daily_summaries?: DailySummary[];
     next_cursor?: string | null;
+    timezone?: string;
   };
   if (!Array.isArray(data.daily_summaries)) {
     throw new Error("Invalid daily response.");
@@ -231,26 +236,36 @@ function parseDailyList(
   return {
     daily_summaries: data.daily_summaries,
     next_cursor: data.next_cursor ?? null,
+    timezone: typeof data.timezone === "string" ? data.timezone : null,
   };
 }
 
-function parseDailyDetail(payload: unknown): DailySummaryDetail | null {
+function parseDailyDetail(payload: unknown): {
+  summary: DailySummaryDetail;
+  timezone: string | null;
+} | null {
   if (!payload || typeof payload !== "object") {
     return null;
   }
-  const data = payload as { daily_summary?: DailySummaryDetail };
+  const data = payload as {
+    daily_summary?: DailySummaryDetail;
+    timezone?: string;
+  };
   if (!data.daily_summary) {
     return null;
   }
-  return data.daily_summary;
+  return {
+    summary: data.daily_summary,
+    timezone: typeof data.timezone === "string" ? data.timezone : null,
+  };
 }
 
 function formatDailySummaryBlock(
   summary: DailySummary,
   nowMs: number,
+  timeZone: string,
   headingPrefix: string
 ): string[] {
-  const timeZone = resolveTimeZone(summary.timezone);
   const lines: string[] = [];
   lines.push(`${headingPrefix} Daily Summary ${summary.id}`, "");
   lines.push(formatTimeZoneHeader(timeZone));
@@ -273,9 +288,9 @@ function formatDailySummaryBlock(
 
 function formatDailyDetailDocument(
   summary: DailySummaryDetail,
-  nowMs: number
+  nowMs: number,
+  timeZone: string
 ): string {
-  const timeZone = resolveTimeZone(summary.timezone);
   const lines: string[] = [`# Daily Summary ${summary.id}`, ""];
 
   lines.push(formatTimeZoneHeader(timeZone));

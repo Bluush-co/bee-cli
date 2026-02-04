@@ -77,7 +77,7 @@ async function handleList(
   }
   const payload = parseTodosList(data);
   const nowMs = Date.now();
-  const timeZone = resolveTimeZone();
+  const timeZone = resolveTimeZone(payload.timezone);
   const open = payload.todos.filter((todo) => !todo.completed);
   const completed = payload.todos.filter((todo) => todo.completed);
 
@@ -157,8 +157,8 @@ async function handleGet(
     return;
   }
   const nowMs = Date.now();
-  const timeZone = resolveTimeZone();
-  const todo = parseTodoPayload(data);
+  const { todo, timezone } = parseTodoResponse(data);
+  const timeZone = resolveTimeZone(timezone);
   if (todo) {
     console.log(formatTodoDocument(todo, nowMs, timeZone));
     return;
@@ -209,8 +209,8 @@ async function handleCreate(
     return;
   }
   const nowMs = Date.now();
-  const timeZone = resolveTimeZone();
-  const todo = parseTodoPayload(data);
+  const { todo, timezone } = parseTodoResponse(data);
+  const timeZone = resolveTimeZone(timezone);
   if (todo) {
     console.log(formatTodoDocument(todo, nowMs, timeZone));
     return;
@@ -317,8 +317,8 @@ async function handleUpdate(
     return;
   }
   const nowMs = Date.now();
-  const timeZone = resolveTimeZone();
-  const todo = parseTodoPayload(data);
+  const { todo, timezone } = parseTodoResponse(data);
+  const timeZone = resolveTimeZone(timezone);
   if (todo) {
     console.log(formatTodoDocument(todo, nowMs, timeZone));
     return;
@@ -457,8 +457,8 @@ async function handleDelete(
     return;
   }
   const nowMs = Date.now();
-  const timeZone = resolveTimeZone();
-  const todo = parseTodoPayload(data);
+  const { todo, timezone } = parseTodoResponse(data);
+  const timeZone = resolveTimeZone(timezone);
   if (todo) {
     console.log(formatTodoDocument(todo, nowMs, timeZone));
     return;
@@ -483,13 +483,14 @@ type Todo = {
 
 function parseTodosList(
   payload: unknown
-): { todos: Todo[]; next_cursor: string | null } {
+): { todos: Todo[]; next_cursor: string | null; timezone: string | null } {
   if (!payload || typeof payload !== "object") {
     throw new Error("Invalid todos response.");
   }
   const data = payload as {
     todos?: Todo[];
     next_cursor?: string | null;
+    timezone?: string;
   };
   if (!Array.isArray(data.todos)) {
     throw new Error("Invalid todos response.");
@@ -497,31 +498,42 @@ function parseTodosList(
   return {
     todos: data.todos,
     next_cursor: data.next_cursor ?? null,
+    timezone: typeof data.timezone === "string" ? data.timezone : null,
   };
 }
 
-function parseTodoPayload(payload: unknown): Todo | null {
+function parseTodoResponse(payload: unknown): {
+  todo: Todo | null;
+  timezone: string | null;
+} {
   if (!payload || typeof payload !== "object") {
-    return null;
+    return { todo: null, timezone: null };
   }
-  if ("todo" in payload) {
-    const todo = (payload as { todo?: Todo }).todo;
-    if (todo) {
-      return todo;
-    }
+  const record = payload as Partial<Todo> & { todo?: Todo; timezone?: string };
+  if (record.todo) {
+    return {
+      todo: record.todo,
+      timezone: typeof record.timezone === "string" ? record.timezone : null,
+    };
   }
 
-  const record = payload as Partial<Todo>;
+  const todoCandidate = record as Partial<Todo>;
   if (
-    typeof record.id === "number" &&
-    typeof record.text === "string" &&
-    typeof record.created_at === "number" &&
-    typeof record.completed === "boolean"
+    typeof todoCandidate.id === "number" &&
+    typeof todoCandidate.text === "string" &&
+    typeof todoCandidate.created_at === "number" &&
+    typeof todoCandidate.completed === "boolean"
   ) {
-    return record as Todo;
+    return {
+      todo: todoCandidate as Todo,
+      timezone: typeof record.timezone === "string" ? record.timezone : null,
+    };
   }
 
-  return null;
+  return {
+    todo: null,
+    timezone: typeof record.timezone === "string" ? record.timezone : null,
+  };
 }
 
 function formatTodosSection(

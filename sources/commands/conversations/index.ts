@@ -65,13 +65,16 @@ async function handleList(
   }
   const payload = parseConversationList(data);
   const nowMs = Date.now();
+  const timeZone = resolveTimeZone(payload.timezone);
   const lines: string[] = ["# Conversations", ""];
 
   if (payload.conversations.length === 0) {
     lines.push("- (none)", "");
   } else {
     for (const conversation of payload.conversations) {
-      lines.push(...formatConversationSummaryBlock(conversation, nowMs, "###"));
+      lines.push(
+        ...formatConversationSummaryBlock(conversation, nowMs, timeZone, "###")
+      );
     }
   }
 
@@ -145,9 +148,9 @@ async function handleGet(
     return;
   }
   const nowMs = Date.now();
-  const detail = parseConversationDetail(data);
-  if (!detail) {
-    const timeZone = resolveTimeZone();
+  const payload = parseConversationDetail(data);
+  if (!payload) {
+    const timeZone = resolveTimeZone(null);
     console.log(
       formatRecordMarkdown({
         title: "Conversation",
@@ -158,7 +161,8 @@ async function handleGet(
     );
     return;
   }
-  console.log(formatConversationDetailDocument(detail, nowMs));
+  const timeZone = resolveTimeZone(payload.timezone);
+  console.log(formatConversationDetailDocument(payload.conversation, nowMs, timeZone));
 }
 
 function parseId(args: readonly string[]): number {
@@ -180,7 +184,6 @@ type ConversationSummary = {
   id: number;
   start_time: number;
   created_at: number;
-  timezone?: string | null;
   short_summary?: string | null;
 };
 
@@ -188,7 +191,6 @@ type ConversationDetail = {
   id: number;
   start_time: number;
   end_time: number | null;
-  timezone?: string | null;
   device_type: string;
   summary: string | null;
   short_summary: string | null;
@@ -223,13 +225,18 @@ type ConversationDetail = {
 
 function parseConversationList(
   payload: unknown
-): { conversations: ConversationSummary[]; next_cursor: string | null } {
+): {
+  conversations: ConversationSummary[];
+  next_cursor: string | null;
+  timezone: string | null;
+} {
   if (!payload || typeof payload !== "object") {
     throw new Error("Invalid conversation list response.");
   }
   const data = payload as {
     conversations?: ConversationSummary[];
     next_cursor?: string | null;
+    timezone?: string;
   };
   if (!Array.isArray(data.conversations)) {
     throw new Error("Invalid conversation list response.");
@@ -237,26 +244,33 @@ function parseConversationList(
   return {
     conversations: data.conversations,
     next_cursor: data.next_cursor ?? null,
+    timezone: typeof data.timezone === "string" ? data.timezone : null,
   };
 }
 
-function parseConversationDetail(payload: unknown): ConversationDetail | null {
+function parseConversationDetail(payload: unknown): {
+  conversation: ConversationDetail;
+  timezone: string | null;
+} | null {
   if (!payload || typeof payload !== "object") {
     return null;
   }
-  const data = payload as { conversation?: ConversationDetail };
+  const data = payload as { conversation?: ConversationDetail; timezone?: string };
   if (!data.conversation) {
     return null;
   }
-  return data.conversation;
+  return {
+    conversation: data.conversation,
+    timezone: typeof data.timezone === "string" ? data.timezone : null,
+  };
 }
 
 function formatConversationSummaryBlock(
   conversation: ConversationSummary,
   nowMs: number,
+  timeZone: string,
   headingPrefix: string
 ): string[] {
-  const timeZone = resolveTimeZone(conversation.timezone);
   const lines: string[] = [];
   lines.push(`${headingPrefix} Conversation ${conversation.id}`, "");
   lines.push(formatTimeZoneHeader(timeZone));
@@ -277,9 +291,9 @@ function formatConversationSummaryBlock(
 
 function formatConversationDetailDocument(
   conversation: ConversationDetail,
-  nowMs: number
+  nowMs: number,
+  timeZone: string
 ): string {
-  const timeZone = resolveTimeZone(conversation.timezone);
   const lines: string[] = [`# Conversation ${conversation.id}`, ""];
 
   lines.push(formatTimeZoneHeader(timeZone));

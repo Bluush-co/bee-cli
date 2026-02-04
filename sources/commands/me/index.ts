@@ -26,7 +26,7 @@ export const meCommand: Command = {
       return;
     }
     const nowMs = Date.now();
-    const timeZone = resolveTimeZone(extractTimeZone(data));
+    const timeZone = resolveTimeZone(parseUserTimezone(data));
     console.log(
       formatRecordMarkdown({
         title: "Profile",
@@ -38,22 +38,12 @@ export const meCommand: Command = {
   },
 };
 
-function extractTimeZone(value: unknown): string | null {
+function parseUserTimezone(value: unknown): string | null {
   if (!value || typeof value !== "object") {
     return null;
   }
-  const record = value as Record<string, unknown>;
-  const candidates = [
-    record["timezone"],
-    record["time_zone"],
-    record["timeZone"],
-  ];
-  for (const candidate of candidates) {
-    if (typeof candidate === "string" && candidate.length > 0) {
-      return candidate;
-    }
-  }
-  return null;
+  const record = value as { timezone?: unknown };
+  return typeof record.timezone === "string" ? record.timezone : null;
 }
 
 function normalizeRecord(payload: unknown): Record<string, unknown> {

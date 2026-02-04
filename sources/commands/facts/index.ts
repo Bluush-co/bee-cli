@@ -81,7 +81,7 @@ async function handleList(
   }
   const payload = parseFactsList(data);
   const nowMs = Date.now();
-  const timeZone = resolveTimeZone();
+  const timeZone = resolveTimeZone(payload.timezone);
   const confirmed = payload.facts.filter((fact) => fact.confirmed);
   const pending = payload.facts.filter((fact) => !fact.confirmed);
 
@@ -175,8 +175,8 @@ async function handleGet(
     return;
   }
   const nowMs = Date.now();
-  const timeZone = resolveTimeZone();
-  const fact = parseFactPayload(data);
+  const { fact, timezone } = parseFactResponse(data);
+  const timeZone = resolveTimeZone(timezone);
   if (fact) {
     console.log(formatFactDocument(fact, nowMs, timeZone));
     return;
@@ -225,8 +225,8 @@ async function handleCreate(
     return;
   }
   const nowMs = Date.now();
-  const timeZone = resolveTimeZone();
-  const fact = parseFactPayload(data);
+  const { fact, timezone } = parseFactResponse(data);
+  const timeZone = resolveTimeZone(timezone);
   if (fact) {
     console.log(formatFactDocument(fact, nowMs, timeZone));
     return;
@@ -305,8 +305,8 @@ async function handleUpdate(
     return;
   }
   const nowMs = Date.now();
-  const timeZone = resolveTimeZone();
-  const fact = parseFactPayload(data);
+  const { fact, timezone } = parseFactResponse(data);
+  const timeZone = resolveTimeZone(timezone);
   if (fact) {
     console.log(formatFactDocument(fact, nowMs, timeZone));
     return;
@@ -406,8 +406,8 @@ async function handleDelete(
     return;
   }
   const nowMs = Date.now();
-  const timeZone = resolveTimeZone();
-  const fact = parseFactPayload(data);
+  const { fact, timezone } = parseFactResponse(data);
+  const timeZone = resolveTimeZone(timezone);
   if (fact) {
     console.log(formatFactDocument(fact, nowMs, timeZone));
     return;
@@ -432,13 +432,14 @@ type Fact = {
 
 function parseFactsList(
   payload: unknown
-): { facts: Fact[]; next_cursor: string | null } {
+): { facts: Fact[]; next_cursor: string | null; timezone: string | null } {
   if (!payload || typeof payload !== "object") {
     throw new Error("Invalid facts response.");
   }
   const data = payload as {
     facts?: Fact[];
     next_cursor?: string | null;
+    timezone?: string;
   };
   if (!Array.isArray(data.facts)) {
     throw new Error("Invalid facts response.");
@@ -446,32 +447,43 @@ function parseFactsList(
   return {
     facts: data.facts,
     next_cursor: data.next_cursor ?? null,
+    timezone: typeof data.timezone === "string" ? data.timezone : null,
   };
 }
 
-function parseFactPayload(payload: unknown): Fact | null {
+function parseFactResponse(payload: unknown): {
+  fact: Fact | null;
+  timezone: string | null;
+} {
   if (!payload || typeof payload !== "object") {
-    return null;
+    return { fact: null, timezone: null };
   }
-  if ("fact" in payload) {
-    const fact = (payload as { fact?: Fact }).fact;
-    if (fact) {
-      return fact;
-    }
+  const record = payload as Partial<Fact> & { fact?: Fact; timezone?: string };
+  if (record.fact) {
+    return {
+      fact: record.fact,
+      timezone: typeof record.timezone === "string" ? record.timezone : null,
+    };
   }
 
-  const record = payload as Partial<Fact>;
+  const factCandidate = record as Partial<Fact>;
   if (
-    typeof record.id === "number" &&
-    typeof record.text === "string" &&
-    typeof record.created_at === "number" &&
-    typeof record.confirmed === "boolean" &&
-    Array.isArray(record.tags)
+    typeof factCandidate.id === "number" &&
+    typeof factCandidate.text === "string" &&
+    typeof factCandidate.created_at === "number" &&
+    typeof factCandidate.confirmed === "boolean" &&
+    Array.isArray(factCandidate.tags)
   ) {
-    return record as Fact;
+    return {
+      fact: factCandidate as Fact,
+      timezone: typeof record.timezone === "string" ? record.timezone : null,
+    };
   }
 
-  return null;
+  return {
+    fact: null,
+    timezone: typeof record.timezone === "string" ? record.timezone : null,
+  };
 }
 
 function formatFactsSection(
