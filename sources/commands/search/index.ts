@@ -7,7 +7,7 @@ import {
 } from "@/utils/markdown";
 
 const USAGE =
-  "bee search conversations --query <text> [--limit N] [--cursor <cursor>] [--json]";
+  "bee search conversations --query <text> [--limit N] [--since <epochMs>] [--until <epochMs>] [--json]";
 
 export const searchCommand: Command = {
   name: "search",
@@ -32,7 +32,8 @@ export const searchCommand: Command = {
 type ConversationsOptions = {
   query: string;
   limit?: number;
-  cursor?: string;
+  since?: number;
+  until?: number;
 };
 
 async function handleConversations(
@@ -41,21 +42,29 @@ async function handleConversations(
 ): Promise<void> {
   const { format, args: remaining } = parseOutputFlag(args);
   const options = parseConversationsArgs(remaining);
-  const body: { query: string; limit?: number; cursor?: string } = {
-    query: options.query,
-  };
+  const body: { query: string; limit?: number; since?: number; until?: number } =
+    {
+      query: options.query,
+    };
 
   if (options.limit !== undefined) {
     body.limit = options.limit;
   }
-  if (options.cursor !== undefined) {
-    body.cursor = options.cursor;
+  if (options.since !== undefined) {
+    body.since = options.since;
+  }
+  if (options.until !== undefined) {
+    body.until = options.until;
   }
 
-  const data = await requestClientJson(context, "/v1/search/conversations", {
-    method: "POST",
-    json: body,
-  });
+  const data = await requestClientJson(
+    context,
+    "/v1/search/conversations/neural",
+    {
+      method: "POST",
+      json: body,
+    }
+  );
   if (format === "json") {
     printJson(data);
     return;
@@ -95,10 +104,10 @@ async function handleConversations(
     }
   }
 
-  if (payload.next_cursor) {
+  if (payload.total !== null) {
     lines.push("-----", "");
-    lines.push("## Pagination", "");
-    lines.push(`- next_cursor: ${payload.next_cursor}`, "");
+    lines.push("## Summary", "");
+    lines.push(`- total: ${payload.total}`, "");
   }
 
   console.log(lines.join("\n"));
@@ -107,7 +116,8 @@ async function handleConversations(
 function parseConversationsArgs(args: readonly string[]): ConversationsOptions {
   let query: string | undefined;
   let limit: number | undefined;
-  let cursor: string | undefined;
+  let since: number | undefined;
+  let until: number | undefined;
   const positionals: string[] = [];
 
   for (let i = 0; i < args.length; i += 1) {
@@ -141,11 +151,33 @@ function parseConversationsArgs(args: readonly string[]): ConversationsOptions {
     }
 
     if (arg === "--cursor") {
+      throw new Error("--cursor is no longer supported. Use --since/--until.");
+    }
+
+    if (arg === "--since") {
       const value = args[i + 1];
       if (value === undefined) {
-        throw new Error("--cursor requires a value");
+        throw new Error("--since requires a value");
       }
-      cursor = value;
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed)) {
+        throw new Error("--since must be a valid epoch timestamp");
+      }
+      since = parsed;
+      i += 1;
+      continue;
+    }
+
+    if (arg === "--until") {
+      const value = args[i + 1];
+      if (value === undefined) {
+        throw new Error("--until requires a value");
+      }
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed)) {
+        throw new Error("--until must be a valid epoch timestamp");
+      }
+      until = parsed;
       i += 1;
       continue;
     }
@@ -169,8 +201,11 @@ function parseConversationsArgs(args: readonly string[]): ConversationsOptions {
   if (limit !== undefined) {
     options.limit = limit;
   }
-  if (cursor !== undefined) {
-    options.cursor = cursor;
+  if (since !== undefined) {
+    options.since = since;
+  }
+  if (until !== undefined) {
+    options.until = until;
   }
 
   return options;
@@ -184,7 +219,7 @@ function parseSearchConversations(
   payload: unknown
 ): {
   conversations: ConversationSearchItem[];
-  next_cursor: string | null;
+  total: number | null;
   timezone: string | null;
 } | null {
   if (!payload || typeof payload !== "object") {
@@ -192,7 +227,7 @@ function parseSearchConversations(
   }
   const data = payload as {
     results?: unknown;
-    next_cursor?: unknown;
+    total?: unknown;
     timezone?: unknown;
   };
   if (!Array.isArray(data.results)) {
@@ -200,10 +235,7 @@ function parseSearchConversations(
   }
   return {
     conversations: data.results as ConversationSearchItem[],
-    next_cursor:
-      typeof data.next_cursor === "string" || data.next_cursor === null
-        ? (data.next_cursor as string | null)
-        : null,
+    total: typeof data.total === "number" ? data.total : null,
     timezone: typeof data.timezone === "string" ? data.timezone : null,
   };
 }
