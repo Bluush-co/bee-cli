@@ -129,7 +129,6 @@ function formatDateTimeParts(
 function formatRelativeTime(nowMs: number, epochMs: number): string {
   return formatDistanceStrict(new Date(epochMs), new Date(nowMs), {
     addSuffix: true,
-    roundingMethod: "round",
   });
 }
 
