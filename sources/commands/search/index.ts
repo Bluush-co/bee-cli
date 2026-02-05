@@ -91,10 +91,12 @@ async function handleConversations(
   } else {
     const timeZone = resolveTimeZone(payload.timezone);
     for (const conversation of payload.conversations) {
+      const { record, summary } = normalizeConversationRecord(conversation);
       lines.push(
-        formatRecordMarkdown({
+        formatConversationRecordMarkdown({
           title: `Conversation ${conversation.id ?? "unknown"}`,
-          record: normalizeConversationRecord(conversation),
+          record,
+          summary,
           timeZone,
           nowMs,
           headingLevel: 3,
@@ -215,9 +217,22 @@ type ConversationSearchItem = Record<string, unknown> & {
   id?: number | string;
 };
 
+function formatConversationRecordMarkdown(options: {
+  title: string;
+  record: Record<string, unknown>;
+  summary: string;
+  timeZone: string;
+  nowMs: number;
+  headingLevel: number;
+}): string {
+  const { summary } = options;
+  const base = formatRecordMarkdown(options).trimEnd();
+  return `${base}\n- summary: ${summary}`;
+}
+
 function normalizeConversationRecord(
   conversation: ConversationSearchItem
-): Record<string, unknown> {
+): { record: Record<string, unknown>; summary: string } {
   const record: Record<string, unknown> = { ...conversation };
   const hasDetailed = Object.prototype.hasOwnProperty.call(
     record,
@@ -226,16 +241,19 @@ function normalizeConversationRecord(
   const hasShort = Object.prototype.hasOwnProperty.call(record, "short_summary");
   const detailedRaw = record["detailed_summary"];
   const shortRaw = record["short_summary"];
+  const summaryRaw = record["summary"];
 
   delete record["detailed_summary"];
   delete record["short_summary"];
+  delete record["summary"];
 
   const detailedText = normalizeSummaryText(detailedRaw);
   const shortText = normalizeSummaryText(shortRaw);
-  const summary = detailedText ?? shortText ?? "(no explicit answer)";
+  const summaryText = normalizeSummaryText(summaryRaw);
+  const summary =
+    detailedText ?? shortText ?? summaryText ?? "(no explicit answer)";
 
   const fields = normalizeFieldsRecord(record["fields"]);
-  fields["summary"] = summary;
   if (hasDetailed) {
     fields["detailed_summary"] = detailedRaw;
   }
@@ -244,7 +262,7 @@ function normalizeConversationRecord(
   }
   record["fields"] = fields;
 
-  return record;
+  return { record, summary };
 }
 
 function normalizeSummaryText(value: unknown): string | null {
