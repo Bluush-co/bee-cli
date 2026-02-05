@@ -2,6 +2,10 @@
   "name": "@beeai/cli",
   "version": "0.3.0",
   "description": "CLI client for bee.computer",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bee-computer/bee-cli.git"
+  },
   "license": "MIT",
   "type": "module",
   "bin": {

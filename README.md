@@ -11,6 +11,9 @@ Connect Bee AI data with your tools
 
 CLI client for [Bee](https://www.bee.computer/) — the wearable AI that captures your conversations and learns about you.
 
+> [!IMPORTANT]
+> To use the CLI, you must have the latest Bee app installed and enable Developer Mode by tapping the app version 10 times in Settings.
+
 ## How does it work?
 
 Bee is an **encrypted** wearable personal AI device that sits quietly in the background, capturing your conversations and experiences throughout the day. It records and encrypts your data making it available only to you. Then inside of the secure compute units it transforms ambient context into:
