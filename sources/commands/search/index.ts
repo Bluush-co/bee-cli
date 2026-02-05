@@ -239,7 +239,7 @@ function formatConversationRecordMarkdown(options: {
 }): string {
   const { summary } = options;
   const base = formatRecordMarkdown(options).trimEnd();
-  return `${base}\n\nsummary: ${summary}`;
+  return `${base}\n\nanswer: ${summary}`;
 }
 
 function normalizeConversationRecord(
