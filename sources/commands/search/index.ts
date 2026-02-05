@@ -94,7 +94,7 @@ async function handleConversations(
       lines.push(
         formatRecordMarkdown({
           title: `Conversation ${conversation.id ?? "unknown"}`,
-          record: conversation,
+          record: normalizeConversationRecord(conversation),
           timeZone,
           nowMs,
           headingLevel: 3,
@@ -214,6 +214,56 @@ function parseConversationsArgs(args: readonly string[]): ConversationsOptions {
 type ConversationSearchItem = Record<string, unknown> & {
   id?: number | string;
 };
+
+function normalizeConversationRecord(
+  conversation: ConversationSearchItem
+): Record<string, unknown> {
+  const record: Record<string, unknown> = { ...conversation };
+  const hasDetailed = Object.prototype.hasOwnProperty.call(
+    record,
+    "detailed_summary"
+  );
+  const hasShort = Object.prototype.hasOwnProperty.call(record, "short_summary");
+  const detailedRaw = record["detailed_summary"];
+  const shortRaw = record["short_summary"];
+
+  delete record["detailed_summary"];
+  delete record["short_summary"];
+
+  const detailedText = normalizeSummaryText(detailedRaw);
+  const shortText = normalizeSummaryText(shortRaw);
+  const summary = detailedText ?? shortText ?? "(no explicit answer)";
+
+  const fields = normalizeFieldsRecord(record["fields"]);
+  fields["summary"] = summary;
+  if (hasDetailed) {
+    fields["detailed_summary"] = detailedRaw;
+  }
+  if (hasShort) {
+    fields["short_summary"] = shortRaw;
+  }
+  record["fields"] = fields;
+
+  return record;
+}
+
+function normalizeSummaryText(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeFieldsRecord(value: unknown): Record<string, unknown> {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return { ...(value as Record<string, unknown>) };
+  }
+  if (value !== undefined) {
+    return { value };
+  }
+  return {};
+}
 
 function parseSearchConversations(
   payload: unknown
