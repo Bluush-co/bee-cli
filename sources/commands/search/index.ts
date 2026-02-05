@@ -7,41 +7,32 @@ import {
 } from "@/utils/markdown";
 
 const USAGE =
-  "bee search conversations --query <text> [--limit N] [--since <epochMs>] [--until <epochMs>] [--json]";
+  "bee search --query <text> [--limit N] [--since <epochMs>] [--until <epochMs>] [--neural] [--json]";
 
 export const searchCommand: Command = {
   name: "search",
   description: "Search developer data.",
   usage: USAGE,
   run: async (args, context) => {
-    if (args.length === 0) {
-      throw new Error("Missing subcommand. Use conversations.");
-    }
-
-    const [subcommand, ...rest] = args;
-    switch (subcommand) {
-      case "conversations":
-        await handleConversations(rest, context);
-        return;
-      default:
-        throw new Error(`Unknown search subcommand: ${subcommand}`);
-    }
+    const { format, args: remaining } = parseOutputFlag(args);
+    const options = parseSearchArgs(remaining);
+    await handleSearch(options, format, context);
   },
 };
 
-type ConversationsOptions = {
+type SearchOptions = {
   query: string;
   limit?: number;
   since?: number;
   until?: number;
+  neural: boolean;
 };
 
-async function handleConversations(
-  args: readonly string[],
+async function handleSearch(
+  options: SearchOptions,
+  format: "markdown" | "json",
   context: CommandContext
 ): Promise<void> {
-  const { format, args: remaining } = parseOutputFlag(args);
-  const options = parseConversationsArgs(remaining);
   const body: { query: string; limit?: number; since?: number; until?: number } =
     {
       query: options.query,
@@ -57,26 +48,28 @@ async function handleConversations(
     body.until = options.until;
   }
 
-  const data = await requestClientJson(
-    context,
-    "/v1/search/conversations/neural",
-    {
-      method: "POST",
-      json: body,
-    }
-  );
+  const endpoint = options.neural
+    ? "/v1/search/conversations/neural"
+    : "/v1/search";
+  const data = await requestClientJson(context, endpoint, {
+    method: "POST",
+    json: body,
+  });
   if (format === "json") {
     printJson(data);
     return;
   }
 
   const nowMs = Date.now();
-  const payload = parseSearchConversations(data);
+  const payload = parseSearchResults(data);
+  const title = options.neural
+    ? "Conversation Search Results"
+    : "Search Results";
   if (!payload) {
     const timeZone = resolveTimeZone(parseSearchTimezone(data));
     console.log(
       formatRecordMarkdown({
-        title: "Conversation Search Results",
+        title,
         record: normalizeRecord(data),
         timeZone,
         nowMs,
@@ -85,18 +78,31 @@ async function handleConversations(
     return;
   }
 
-  const lines: string[] = ["# Conversation Search Results", ""];
-  if (payload.conversations.length === 0) {
+  const lines: string[] = [`# ${title}`, ""];
+  if (payload.results.length === 0) {
     lines.push("- (none)", "");
   } else {
     const timeZone = resolveTimeZone(payload.timezone);
-    for (const conversation of payload.conversations) {
-      const { record, summary } = normalizeConversationRecord(conversation);
+    for (const result of payload.results) {
+      if (options.neural) {
+        const { record, summary } = normalizeConversationRecord(result);
+        lines.push(
+          formatConversationRecordMarkdown({
+            title: `Conversation ${result.id ?? "unknown"}`,
+            record,
+            summary,
+            timeZone,
+            nowMs,
+            headingLevel: 3,
+          }).trimEnd()
+        );
+        lines.push("");
+        continue;
+      }
       lines.push(
-        formatConversationRecordMarkdown({
-          title: `Conversation ${conversation.id ?? "unknown"}`,
-          record,
-          summary,
+        formatRecordMarkdown({
+          title: `Result ${result.id ?? "unknown"}`,
+          record: result,
           timeZone,
           nowMs,
           headingLevel: 3,
@@ -115,11 +121,12 @@ async function handleConversations(
   console.log(lines.join("\n"));
 }
 
-function parseConversationsArgs(args: readonly string[]): ConversationsOptions {
+function parseSearchArgs(args: readonly string[]): SearchOptions {
   let query: string | undefined;
   let limit: number | undefined;
   let since: number | undefined;
   let until: number | undefined;
+  let neural = false;
   const positionals: string[] = [];
 
   for (let i = 0; i < args.length; i += 1) {
@@ -154,6 +161,11 @@ function parseConversationsArgs(args: readonly string[]): ConversationsOptions {
 
     if (arg === "--cursor") {
       throw new Error("--cursor is no longer supported. Use --since/--until.");
+    }
+
+    if (arg === "--neural") {
+      neural = true;
+      continue;
     }
 
     if (arg === "--since") {
@@ -199,7 +211,7 @@ function parseConversationsArgs(args: readonly string[]): ConversationsOptions {
     throw new Error("Missing query. Provide --query.");
   }
 
-  const options: ConversationsOptions = { query };
+  const options: SearchOptions = { query, neural };
   if (limit !== undefined) {
     options.limit = limit;
   }
@@ -213,7 +225,7 @@ function parseConversationsArgs(args: readonly string[]): ConversationsOptions {
   return options;
 }
 
-type ConversationSearchItem = Record<string, unknown> & {
+type SearchResultItem = Record<string, unknown> & {
   id?: number | string;
 };
 
@@ -231,9 +243,10 @@ function formatConversationRecordMarkdown(options: {
 }
 
 function normalizeConversationRecord(
-  conversation: ConversationSearchItem
+  conversation: SearchResultItem
 ): { record: Record<string, unknown>; summary: string } {
   const record: Record<string, unknown> = { ...conversation };
+  const hadFields = Object.prototype.hasOwnProperty.call(record, "fields");
   const hasDetailed = Object.prototype.hasOwnProperty.call(
     record,
     "detailed_summary"
@@ -260,7 +273,9 @@ function normalizeConversationRecord(
   if (hasShort) {
     fields["short_summary"] = shortRaw;
   }
-  record["fields"] = fields;
+  if (hadFields || hasDetailed || hasShort) {
+    record["fields"] = fields;
+  }
 
   return { record, summary };
 }
@@ -283,10 +298,10 @@ function normalizeFieldsRecord(value: unknown): Record<string, unknown> {
   return {};
 }
 
-function parseSearchConversations(
+function parseSearchResults(
   payload: unknown
 ): {
-  conversations: ConversationSearchItem[];
+  results: SearchResultItem[];
   total: number | null;
   timezone: string | null;
 } | null {
@@ -302,7 +317,7 @@ function parseSearchConversations(
     return null;
   }
   return {
-    conversations: data.results as ConversationSearchItem[],
+    results: data.results as SearchResultItem[],
     total: typeof data.total === "number" ? data.total : null,
     timezone: typeof data.timezone === "string" ? data.timezone : null,
   };
