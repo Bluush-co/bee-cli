@@ -64,7 +64,7 @@ By default, data commands return markdown. Use `--json` to print raw JSON.
 
 - `changed` - Fetch recent changes (defaults to last 24 hours). Use `--cursor <cursor>` and `--json` for JSON output.
 
-- `stream` - Stream real-time events. Options: `--types <list>`, `--json`, `--format agent`, `--webhook-endpoint <url>`, `--webhook-body <template>`.
+- `stream` - Stream real-time events. Options: `--types <list>`, `--json`, `--agent`, `--webhook-endpoint <url>`, `--webhook-body <template>`.
 
 - `facts` - Manage your facts (things Bee remembers about you).
   - `facts list` - List facts. Options: `--limit N`, `--cursor <cursor>`, `--unconfirmed`, `--json`.
@@ -109,7 +109,7 @@ Use `bee stream` to receive server-sent events (SSE). You can filter events with
 `--types` (comma-separated) or pass `--types all` to receive everything. Each
 event includes an `event` name and a JSON `data` payload.
 
-Use `--format agent` for a single-line, agent-friendly output like:
+Use `--agent` for a single-line, agent-friendly output like:
 `Event new-utterance: [speaker_1] "Hello there" conv=uuid-string`.
 Webhook templates use the same agent-friendly message for `{{message}}`.
 

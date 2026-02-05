@@ -35,7 +35,7 @@ const USAGE = [
     "bee stream",
     "bee stream --types new-utterance,update-conversation",
     "bee stream --json",
-    "bee stream --format agent",
+    "bee stream --agent",
     "bee stream --types all",
     "bee stream --webhook-endpoint https://example.com/hooks/agent --webhook-body '{\"message\":\"{{message}}\"}'",
 ].join("\n");
@@ -54,7 +54,6 @@ export const streamCommand: Command = {
 
 function parseArgs(args: readonly string[]): StreamOptions {
     const options: StreamOptions = { format: "pretty" };
-    let formatExplicit = false;
     const positionals: string[] = [];
 
     for (let i = 0; i < args.length; i += 1) {
@@ -74,28 +73,12 @@ function parseArgs(args: readonly string[]): StreamOptions {
         }
 
         if (arg === "--json") {
-            if (formatExplicit && options.format !== "json") {
-                throw new Error("--json cannot be combined with --format");
-            }
             options.format = "json";
-            formatExplicit = true;
             continue;
         }
 
-        if (arg === "--format") {
-            const value = args[i + 1];
-            if (value === undefined) {
-                throw new Error("--format requires a value");
-            }
-            if (value !== "pretty" && value !== "json" && value !== "agent") {
-                throw new Error(`Unknown format: ${value}`);
-            }
-            if (formatExplicit && options.format !== value) {
-                throw new Error("--format cannot be combined with other output flags");
-            }
-            options.format = value;
-            formatExplicit = true;
-            i += 1;
+        if (arg === "--agent") {
+            options.format = "agent";
             continue;
         }
 
