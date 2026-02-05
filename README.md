@@ -9,6 +9,12 @@
 Connect Bee AI data with your tools
 </h4>
 
+<div align="center">
+
+[🌐 **Website**](https://bee.computer) • [📱 **iOS App**](https://apps.apple.com/us/app/bee-your-personal-ai/id6480349491) • [🤖 **Android App**](#) (Coming Soon) • [🧩 **Agent Skill**](https://github.com/bee-computer/bee-skill)
+
+</div>
+
 CLI client for [Bee](https://www.bee.computer/) — the wearable AI that captures your conversations and learns about you.
 
 > [!IMPORTANT]
